@@ -1,4 +1,4 @@
-# Dependecnias do Projeto
+# Dependências do Projeto
 opencv-contrib-python
 numpy
 open3d
