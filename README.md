@@ -1,11 +1,26 @@
-# ⚛️ Análise Volumétrica
+# ⚛️ Análise Volumétrica 3D
 
-Este projeto é uma aplicação em Python destinada à análise volumétrica de dados, oferecendo ferramentas para processamento e visualização de informações volumétricas. 
-O projeto utiliza um ambiente virtual (`.venv`) para gerenciar suas dependências de forma isolada, garantindo reprodutibilidade em Linux, macOS e Windows.
+Este projeto é uma aplicação de **Visão Computacional** e **Análise Volumétrica 3D**, desenvolvida em **Python 3.9+**, destinada a calcular o volume de objetos a partir de vídeos.  
+O projeto utiliza um **ambiente virtual (`.venv`)** para gerenciar dependências de forma isolada, garantindo reprodutibilidade em Linux, macOS e Windows.
 
-# ⚙️ Configuração Rápida
+---
 
-Para compilar e preparar o ambiente, execute o arquivo `setup_venv.py` ou o script: `python3 ./setup_venv.py`.
+## 🎯 Objetivos Principais
 
-- ⚠️ Recomendado: **Python 3.9 a 3.11**
+* **Input**: Arquivos de vídeo (MP4/AVI) do objeto de interesse, armazenados em `data/videos/`.  
+* **Processo**: Reconstrução 3D usando **Structure-from-Motion (SfM)** e **Multi-View Stereo (MVS)** via COLMAP.  
+* **Output**: Volume calculado em unidades reais ($m^3$ ou $cm^3$) e visualização da malha 3D reconstruída.
+
+---
+
+## ⚙️ Configuração do Ambiente
+
+Para preparar o ambiente virtual e instalar dependências:
+
+```bash
+# Usando o script do projeto
+python3 ./bin/venv_dependencies/setup_venv.py
+```
+## ⚠️ Recomendado: 
+-- **Python 3.9 a 3.11**
 
