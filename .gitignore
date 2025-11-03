@@ -1,16 +1,32 @@
+# ======================
 # Python
+# ======================
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
 
-# Venv
+# ======================
+# Virtual Environments
+# ======================
 .venv/
+env/
+venv/
+ENV/
 
+# ======================
 # IDEs
+# ======================
+# PyCharm
 .idea/
+*.iml
+*.iws
+*.ipr
+
+# VSCode
 .vscode/
 
-# OS
+# ======================
+# System files
+# ======================
 .DS_Store
 Thumbs.db
