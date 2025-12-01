@@ -1,7 +1,9 @@
 import os
 import platform
 import numpy as np
+import sys
 from utils.camera_calibration_utils import calibrate_camera_from_images
+from src.acquisition import acquisition
 
 # Configurações básicas (sem YAML)
 Settings = {
@@ -13,6 +15,7 @@ Settings = {
 
 if __name__ == "__main__":
     print(f"Running on {platform.system()}")
+
     print("=== CAMERA CALIBRATION ===")
 
     # Roda a calibração
@@ -42,3 +45,13 @@ if __name__ == "__main__":
 
     print(f"\nCalibração concluída!")
     print(f"Parâmetros salvos em: {output_file}")
+
+    print("=== EXTRAINDO FRAMES ===")
+    acq = acquisition()
+    try:
+        acq.save_video_frames(
+            video_path="data/in/videos/Clio.mp4",
+            output_dir="data/out/frames"
+        )
+    except KeyboardInterrupt:
+        print("\nExtração interrompida pelo usuário.", file=sys.stderr)
