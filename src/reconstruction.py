@@ -6,7 +6,7 @@ def run_cmd(cmd):
     subprocess.run(cmd, shell=True, check=True)
 
 def run_colmap_reconstruction(image_dir, output_dir, resources_dir):
-    print("\n========= RUNNING COLMAP RECONSTRUCTION =========\n")
+    print("\n========= COMEÇANDO RECONSTRUÇÃO COM O COLMAP =========\n")
 
     database_path = os.path.join(output_dir, "database.db")
     sparse_dir = os.path.join(output_dir, "sparse")
@@ -62,4 +62,4 @@ def run_colmap_reconstruction(image_dir, output_dir, resources_dir):
         f"--output_path {dense_dir}/fused.ply"
     )
 
-    print("\n========= RECONSTRUCTION FINISHED =========\n")
+    print("\n========= RECONSTRUÇÃO FINALIZADA =========\n")

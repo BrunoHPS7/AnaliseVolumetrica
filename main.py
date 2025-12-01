@@ -4,8 +4,9 @@ import numpy as np
 import sys
 from utils.camera_calibration_utils import calibrate_camera_from_images
 from src.acquisition import acquisition
+from src.reconstruction import run_colmap_reconstruction
 
-# Configurações básicas (sem YAML)
+# Configurações básicas
 Settings = {
     "checkerboard size": (9, 6),      # ajuste para o seu tabuleiro
     "square size": 25.0,              # mm (ou a unidade que você quiser)
@@ -13,9 +14,19 @@ Settings = {
     "output file": "./data/out/camera_calibration_output/camera_calibration.npz"
 }
 
-if __name__ == "__main__":
-    print(f"Running on {platform.system()}")
+# Caminhos Extração de Frames:
+VIDEO_PATH = "data/in/videos/Clio.mp4"
+OUTPUT_FRAMES_DIR = "data/out/frames"
+DESIRED_FPS = 2
 
+# Caminhos Reconstrução:
+image_dir = "./data/out/frames"  # frames
+output_dir = "./data/out/colmap_output"  # saída
+resources_dir = "./resources"  # .ini prontos
+
+if __name__ == "__main__":
+    # Camera Calibrattion:
+    print(f"Running on {platform.system()}")
     print("=== CAMERA CALIBRATION ===")
 
     # Roda a calibração
@@ -46,12 +57,20 @@ if __name__ == "__main__":
     print(f"\nCalibração concluída!")
     print(f"Parâmetros salvos em: {output_file}")
 
-    print("=== EXTRAINDO FRAMES ===")
+
+    # Extração de Frames
+    print("\n\n=== EXTRAINDO FRAMES ===")
     acq = acquisition()
     try:
-        acq.save_video_frames(
-            video_path="data/in/videos/Clio.mp4",
-            output_dir="data/out/frames"
+        acquisition.save_video_frames_fps(  # Chamada diretamente pela classe acquisition
+            video_path=VIDEO_PATH,  # Usando a variável definida no início
+            output_dir=OUTPUT_FRAMES_DIR,
+            desired_fps= DESIRED_FPS
         )
     except KeyboardInterrupt:
         print("\nExtração interrompida pelo usuário.", file=sys.stderr)
+
+
+    # Reconstrução:
+    print("\n\n=== Reconstruction ===")
+    run_colmap_reconstruction(image_dir, output_dir, resources_dir)

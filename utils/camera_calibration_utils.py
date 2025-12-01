@@ -72,7 +72,7 @@ def calibrate_camera_from_images(Settings: dict) -> tuple[Any,Any,Any,Any]:
     ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
 
     if ret:
-        print("\nCalibração concluída com sucesso.")
+        print("\nCalibração concluída com sucesso.\n")
         print("Matriz da câmera:\n", mtx)
         print("Coeficientes de distorção:\n", dist)
         return mtx, dist, rvecs, tvecs
