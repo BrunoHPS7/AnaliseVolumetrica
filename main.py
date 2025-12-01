@@ -26,6 +26,11 @@ if __name__ == "__main__":
 
     # Salvar em um arquivo simples .npz
     output_file = Settings["output file"]
+    output_dir = os.path.dirname(output_file)
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"Pasta criada: {output_dir}")
 
     np.savez(
         output_file,
