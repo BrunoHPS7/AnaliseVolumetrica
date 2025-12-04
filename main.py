@@ -15,14 +15,14 @@ Settings = {
 }
 
 # Caminhos Extração de Frames:
-VIDEO_PATH = "data/in/videos/Clio.mp4"
-OUTPUT_FRAMES_DIR = "data/out/frames"
+VIDEO_PATH = "./data/in/videos/Clio.mp4"
+OUTPUT_FRAMES_DIR = "./data/out/frames"
 DESIRED_FPS = 2
 
 # Caminhos Reconstrução:
-image_dir = "./data/out/frames"  # frames
-output_dir = "./data/out/colmap_output"  # saída
-resources_dir = "./resources"  # .ini prontos
+image_dir_colmap = "./data/out/frames"  # frames
+output_dir_colmap = "./data/out/colmap_output"  # saída
+resources_dir_colmap = "./resources"  # .ini prontos
 
 if __name__ == "__main__":
     # Camera Calibrattion:
@@ -73,4 +73,4 @@ if __name__ == "__main__":
 
     # Reconstrução:
     print("\n\n=== Reconstruction ===")
-    run_colmap_reconstruction(image_dir, output_dir, resources_dir)
+    run_colmap_reconstruction(image_dir_colmap, output_dir_colmap, resources_dir_colmap)
