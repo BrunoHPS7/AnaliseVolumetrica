@@ -24,6 +24,11 @@ image_dir_colmap = "./data/out/frames"  # frames
 output_dir_colmap = "./data/out/colmap_output"  # saída
 resources_dir_colmap = "./resources"  # .ini prontos
 
+
+# Normalizando o caminho de arquivos, pois o sistema aceita / e o Windows é \
+def normalize_path(p):
+    return p.replace("\\", "/")
+
 if __name__ == "__main__":
     # Camera Calibrattion:
     print(f"Running on {platform.system()}")
@@ -69,8 +74,16 @@ if __name__ == "__main__":
         )
     except KeyboardInterrupt:
         print("\nExtração interrompida pelo usuário.", file=sys.stderr)
-
+        sys.exit(1)
 
     # Reconstrução:
     print("\n\n=== Reconstruction ===")
-    run_colmap_reconstruction(image_dir_colmap, output_dir_colmap, resources_dir_colmap)
+    try:
+        run_colmap_reconstruction(
+            normalize_path(image_dir_colmap),
+            normalize_path(output_dir_colmap),
+            normalize_path(resources_dir_colmap)
+        )
+    except KeyboardInterrupt:
+        print("\nExtração interrompida pelo usuário.", file=sys.stderr)
+        sys.exit(1)
