@@ -69,8 +69,13 @@ if __name__ == "__main__":
         )
     except KeyboardInterrupt:
         print("\nExtração interrompida pelo usuário.", file=sys.stderr)
+        sys.exit(1)
 
 
     # Reconstrução:
     print("\n\n=== Reconstruction ===")
-    run_colmap_reconstruction(image_dir, output_dir, resources_dir)
+    try:
+        run_colmap_reconstruction(image_dir, output_dir, resources_dir)
+    except KeyboardInterrupt:
+        print("\nExtração interrompida pelo usuário.", file=sys.stderr)
+        sys.exit(1)
