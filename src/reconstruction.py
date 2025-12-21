@@ -1,6 +1,9 @@
 import subprocess
 import os
 
+# Converte caminhos Windows para formato universal com /
+def normalize_path(path: str) -> str:
+    return path.replace("\\", "/")
 
 def run_cmd(cmd):
     """Executa um comando no terminal e verifica se há erros."""
@@ -8,12 +11,15 @@ def run_cmd(cmd):
     # O shell=True é usado para que o f-string seja interpretado como um comando único.
     subprocess.run(cmd, shell=True, check=True)
 
-
 def run_colmap_reconstruction(image_dir, output_dir, resources_dir):
     """
     Executa o pipeline completo de reconstrução 3D do COLMAP.
     """
     print("\n========= COMEÇANDO RECONSTRUÇÃO COM O COLMAP =========\n")
+
+    image_dir = normalize_path(image_dir)
+    output_dir = normalize_path(output_dir)
+    resources_dir = normalize_path(resources_dir)
 
     # Define os caminhos de saída
     database_path = os.path.join(output_dir, "database.db")
@@ -22,6 +28,8 @@ def run_colmap_reconstruction(image_dir, output_dir, resources_dir):
 
     dense_dir = os.path.join(output_dir, "dense")
     os.makedirs(dense_dir, exist_ok=True)
+
+    database_path = normalize_path(os.path.join(output_dir, "database.db"))
 
     # ----------------------------------------------------
     # 1. Feature extractor (Extração de Features)

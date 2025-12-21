@@ -1,76 +1,87 @@
+import yaml
 import os
 import platform
 import numpy as np
 import sys
+
+# Seus imports originais
 from utils.camera_calibration_utils import calibrate_camera_from_images
 from src.acquisition import acquisition
 from src.reconstruction import run_colmap_reconstruction
 
-# Configurações básicas
-Settings = {
-    "checkerboard size": (9, 6),      # ajuste para o seu tabuleiro
-    "square size": 25.0,              # mm (ou a unidade que você quiser)
-    "calibration folder": "./data/in/images",
-    "output file": "./data/out/camera_calibration_output/camera_calibration.npz"
-}
 
-# Caminhos Extração de Frames:
-VIDEO_PATH = "data/in/videos/Clio.mp4"
-OUTPUT_FRAMES_DIR = "data/out/frames"
-DESIRED_FPS = 2
+def load_config(path="config.yaml"):
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
-# Caminhos Reconstrução:
-image_dir = "./data/out/frames"  # frames
-output_dir = "./data/out/colmap_output"  # saída
-resources_dir = "./resources"  # .ini prontos
 
-if __name__ == "__main__":
-    # Camera Calibrattion:
-    print(f"Running on {platform.system()}")
-    print("=== CAMERA CALIBRATION ===")
+def normalize_path(p):
+    return p.replace("\\", "/")
 
-    # Roda a calibração
-    resultado = calibrate_camera_from_images(Settings)
 
-    if resultado is None:
-        print("Calibração falhou! Nada foi salvo.")
-        exit(1)
+def run_calibration_module(cfg):
+    print("\n=== MÓDULO: CAMERA CALIBRATION ===")
+    settings = {
+        "checkerboard size": tuple(cfg["parameters"]["calibration"]["checkerboard_size"]),
+        "square size": cfg["parameters"]["calibration"]["square_size"],
+        "calibration folder": cfg["paths"]["calibration_images"],
+        "output file": cfg["paths"]["calibration_output"]
+    }
 
-    camera_matrix, dist_coeffs, rvecs, tvecs = resultado
+    resultado = calibrate_camera_from_images(settings)
+    if resultado:
+        mtx, dist, rvecs, tvecs = resultado
+        output_file = settings["output file"]
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        np.savez(output_file, camera_matrix=mtx, dist_coeffs=dist,
+                 rvecs=np.array(rvecs, dtype=object), tvecs=np.array(tvecs, dtype=object))
+        print(f"Sucesso! Salvo em: {output_file}")
 
-    # Salvar em um arquivo simples .npz
-    output_file = Settings["output file"]
-    output_dir = os.path.dirname(output_file)
 
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir, exist_ok=True)
-        print(f"Pasta criada: {output_dir}")
-
-    np.savez(
-        output_file,
-        camera_matrix=camera_matrix,
-        dist_coeffs=dist_coeffs,
-        rvecs=np.array(rvecs, dtype=object),
-        tvecs=np.array(tvecs, dtype=object)
+def run_opencv_module(cfg):
+    print("\n=== MÓDULO: OPENCV (EXTRAÇÃO) ===")
+    acq = acquisition()
+    acquisition.save_video_frames_fps(
+        video_path=cfg["paths"]["video_input"],
+        output_dir=cfg["paths"]["frames_output"],
+        desired_fps=cfg["parameters"]["acquisition"]["desired_fps"]
     )
 
-    print(f"\nCalibração concluída!")
-    print(f"Parâmetros salvos em: {output_file}")
+
+def run_reconstruction_module(cfg):
+    print("\n=== MÓDULO: RECONSTRUCTION (COLMAP) ===")
+    run_colmap_reconstruction(
+        normalize_path(cfg["paths"]["frames_output"]),
+        normalize_path(cfg["paths"]["colmap_output"]),
+        normalize_path(cfg["paths"]["resources"])
+    )
 
 
-    # Extração de Frames
-    print("\n\n=== EXTRAINDO FRAMES ===")
-    acq = acquisition()
+if __name__ == "__main__":
+    config = load_config()
+    mode = config.get("execution_mode", "OpenCV")
+
+    print(f"Sistema operacional: {platform.system()}")
+    print(f"Modo de execução ativo: {mode}")
+
     try:
-        acquisition.save_video_frames_fps(  # Chamada diretamente pela classe acquisition
-            video_path=VIDEO_PATH,  # Usando a variável definida no início
-            output_dir=OUTPUT_FRAMES_DIR,
-            desired_fps= DESIRED_FPS
-        )
+        if mode == "CameraCalibration":
+            run_calibration_module(config)
+
+        elif mode == "OpenCV":
+            run_opencv_module(config)
+
+        elif mode == "Reconstruction":
+            run_reconstruction_module(config)
+
+        elif mode == "Full":
+            run_calibration_module(config)
+            run_opencv_module(config)
+            run_reconstruction_module(config)
+
+        else:
+            print(f"Erro: Modo '{mode}' não reconhecido no config.yaml")
+
     except KeyboardInterrupt:
-        print("\nExtração interrompida pelo usuário.", file=sys.stderr)
-
-
-    # Reconstrução:
-    print("\n\n=== Reconstruction ===")
-    run_colmap_reconstruction(image_dir, output_dir, resources_dir)
+        print("\nProcesso interrompido pelo usuário.")
+        sys.exit(1)
