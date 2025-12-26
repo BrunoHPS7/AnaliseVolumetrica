@@ -7,6 +7,4 @@
 # ---------------------------------------------------------------
 
 import pytest
-import trimesh
-import numpy as np
 from src import processing

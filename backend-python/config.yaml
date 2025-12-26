@@ -1,5 +1,5 @@
 # Define o que será executado: "OpenCV", "Reconstruction", "CameraCalibration" ou "Full"
-execution_mode: "CameraCalibration"
+execution_mode: "Full"
 
 # Configurações de Caminhos (Paths)
 paths:
@@ -8,7 +8,7 @@ paths:
   calibration_output: "./data/out/camera_calibration_output/camera_calibration.npz"
 
   # Extração (OpenCV)
-  video_input: "/home/Arquivos/Videos_Colmap/ventilador.mp4"
+  video_input: "./data/in/videos/ventilador.mp4"
   frames_output: "./data/out/frames"
 
   # Reconstrução (Colmap)

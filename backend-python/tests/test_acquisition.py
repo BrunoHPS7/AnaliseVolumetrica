@@ -7,7 +7,4 @@
 # ---------------------------------------------------------------
 
 import pytest
-import os
-import cv2
-import numpy as np
 from src import acquisition
