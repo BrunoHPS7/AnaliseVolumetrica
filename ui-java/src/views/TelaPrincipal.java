@@ -32,13 +32,26 @@ public class TelaPrincipal extends javax.swing.JFrame {
     private void initComponents() {
 
         jPanelWelcome = new javax.swing.JPanel();
-        jLabel3WELCOME = new javax.swing.JLabel();
+        jPanelWELCOME2 = new javax.swing.JPanel();
+        jLabel2 = new javax.swing.JLabel();
+        jLabel3 = new javax.swing.JLabel();
+        jLabel4 = new javax.swing.JLabel();
+        jLabel5 = new javax.swing.JLabel();
+        jLabel6 = new javax.swing.JLabel();
+        jLabel7 = new javax.swing.JLabel();
+        jLabel8 = new javax.swing.JLabel();
+        jLabel9 = new javax.swing.JLabel();
         jPanelSobre = new javax.swing.JPanel();
-        jLabel2SOBRE = new javax.swing.JLabel();
+        jLabel10 = new javax.swing.JLabel();
+        jLabel12 = new javax.swing.JLabel();
+        jLabel11 = new javax.swing.JLabel();
+        jLabel13 = new javax.swing.JLabel();
+        jLabel14 = new javax.swing.JLabel();
         jPanelTutorial = new javax.swing.JPanel();
         jLabel1TUTORIAL = new javax.swing.JLabel();
         jPanelHistorico = new javax.swing.JPanel();
         jLabel1HISTORICO = new javax.swing.JLabel();
+        jLabel1 = new javax.swing.JLabel();
         jMenuBar = new javax.swing.JMenuBar();
         jMenuIniciar = new javax.swing.JMenu();
         jMenuItemWelcome = new javax.swing.JMenuItem();
@@ -58,32 +71,137 @@ public class TelaPrincipal extends javax.swing.JFrame {
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
         setMaximumSize(new java.awt.Dimension(1920, 1080));
         setMinimumSize(new java.awt.Dimension(800, 600));
-        setPreferredSize(new java.awt.Dimension(1280, 720));
+        setPreferredSize(new java.awt.Dimension(800, 600));
+        setResizable(false);
 
-        jPanelWelcome.setMaximumSize(new java.awt.Dimension(1600, 900));
+        jPanelWelcome.setMaximumSize(new java.awt.Dimension(1280, 720));
         jPanelWelcome.setMinimumSize(new java.awt.Dimension(800, 600));
         jPanelWelcome.setLayout(new java.awt.CardLayout());
 
-        jLabel3WELCOME.setText("JPANEL WELCOME");
-        jPanelWelcome.add(jLabel3WELCOME, "card4");
+        jLabel2.setFont(new java.awt.Font("Segoe UI", 1, 20)); // NOI18N
+        jLabel2.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        jLabel2.setText("Bem-vindo ao [Nome do Aplicativo]!");
 
-        jLabel2SOBRE.setText("JPANEL SOBRE");
+        jLabel3.setFont(new java.awt.Font("Segoe UI", 0, 16)); // NOI18N
+        jLabel3.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        jLabel3.setText("<html> <div style=\"text-align: center;\">Este aplicativo foi desenvolvido para realizar análise volumétrica de objetos por meio de técnicas de visão computacional, permitindo o cálculo de volumes a partir do processamento e análise de imagens. </div>   </html>");
+        jLabel3.setToolTipText("");
+
+        jLabel4.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
+        jLabel4.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/application.png"))); // NOI18N
+        jLabel4.setText("<html><b>Iniciar:</b> Comece aqui. Carregue um novo arquivo de vídeo para realizar a reconstrução 3D e o cálculo volumétrico.</html>");
+
+        jLabel5.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
+        jLabel5.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/database.png"))); // NOI18N
+        jLabel5.setText("<html><b>Histórico:</b> Acesse o banco de dados de análises anteriores, visualize resultados salvos e métricas de processamento.</html>");
+
+        jLabel6.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
+        jLabel6.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/application_xp_terminal.png"))); // NOI18N
+        jLabel6.setText("<html><b>Tutorial:</b> Dúvidas na captura? Veja o guia passo a passo de como filmar o objeto para obter a melhor precisão.</html>");
+
+        jLabel7.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
+        jLabel7.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/information.png"))); // NOI18N
+        jLabel7.setText("<html><b>Sobre:</b> Conheça a tecnologia por trás do projeto e a equipe de desenvolvimento.</html>");
+
+        jLabel8.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
+        jLabel8.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/cross.png"))); // NOI18N
+        jLabel8.setText("<html><b>Sair:</b> Encerrar o aplicativo.</html>");
+
+        jLabel9.setFont(new java.awt.Font("Segoe UI", 0, 16)); // NOI18N
+        jLabel9.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        jLabel9.setText("<html> <div style=\"text-align: center;\">Para navegar, utilize o menu superior. Aqui está o que você pode fazer: </div> </html>");
+
+        javax.swing.GroupLayout jPanelWELCOME2Layout = new javax.swing.GroupLayout(jPanelWELCOME2);
+        jPanelWELCOME2.setLayout(jPanelWELCOME2Layout);
+        jPanelWELCOME2Layout.setHorizontalGroup(
+            jPanelWELCOME2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(jPanelWELCOME2Layout.createSequentialGroup()
+                .addContainerGap()
+                .addGroup(jPanelWELCOME2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(jLabel3, javax.swing.GroupLayout.Alignment.TRAILING, javax.swing.GroupLayout.PREFERRED_SIZE, 0, Short.MAX_VALUE)
+                    .addComponent(jLabel4)
+                    .addComponent(jLabel6)
+                    .addComponent(jLabel7)
+                    .addComponent(jLabel2, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                    .addComponent(jLabel8)
+                    .addComponent(jLabel5, javax.swing.GroupLayout.DEFAULT_SIZE, 788, Short.MAX_VALUE)
+                    .addComponent(jLabel9))
+                .addContainerGap())
+        );
+        jPanelWELCOME2Layout.setVerticalGroup(
+            jPanelWELCOME2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(jPanelWELCOME2Layout.createSequentialGroup()
+                .addGap(23, 23, 23)
+                .addComponent(jLabel2, javax.swing.GroupLayout.PREFERRED_SIZE, 65, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jLabel3, javax.swing.GroupLayout.PREFERRED_SIZE, 81, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, 69, Short.MAX_VALUE)
+                .addComponent(jLabel9, javax.swing.GroupLayout.PREFERRED_SIZE, 53, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jLabel4, javax.swing.GroupLayout.PREFERRED_SIZE, 40, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jLabel5, javax.swing.GroupLayout.PREFERRED_SIZE, 40, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jLabel6, javax.swing.GroupLayout.PREFERRED_SIZE, 40, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jLabel7, javax.swing.GroupLayout.PREFERRED_SIZE, 40, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jLabel8, javax.swing.GroupLayout.PREFERRED_SIZE, 40, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGap(73, 73, 73))
+        );
+
+        jPanelWelcome.add(jPanelWELCOME2, "telaInicial");
+
+        jLabel10.setFont(new java.awt.Font("Segoe UI", 1, 20)); // NOI18N
+        jLabel10.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        jLabel10.setText("Sobre o Projeto");
+
+        jLabel12.setFont(new java.awt.Font("Segoe UI", 0, 16)); // NOI18N
+        jLabel12.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        jLabel12.setText("<html> <div style=\"text-align: center\"> <p>O <b>[Nome do Aplicativo]</b> é um software desenvolvido para reconstrução 3D e estimativa de volume a partir de arquivos de vídeo, utilizando Visão Computacional.</p></div></html>");
+
+        jLabel11.setFont(new java.awt.Font("Segoe UI", 0, 16)); // NOI18N
+        jLabel11.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        jLabel11.setText("<html> <div style=\"text-align: center\">\n<b>Java Swing:</b> Interface gráfica do usuário (GUI). <br>         \n<b>Python:</b> Backend e processamento numérico. <br>         \n<b>Flask API:</b> Comunicação entre Interface e Backend. <br>         \n<b>OpenCV:</b> Processamento e análise de imagens. <br>         \n<b>Open3D:</b> Manipulação de nuvens de pontos e malhas. <br>         \n<b>SfM (COLMAP):</b> Reconstrução 3D a partir de múltiplas imagens.\n</div> </html>");
+
+        jLabel13.setFont(new java.awt.Font("Segoe UI", 0, 16)); // NOI18N
+        jLabel13.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        jLabel13.setText("<html> <div style=\"text-align: center\"> <h2 style='text-align: center;'>Equipe de Desenvolvimento</h2> \nJonas<br>Bruno<br>Tiago<br>Sofia<br>Mateus<br>Zeca<br><br>\n<p><i>Instituto de Ciências Exatas e Aplicadas - ICEA/UFOP</i></p> </div> </html>");
+
+        jLabel14.setFont(new java.awt.Font("Segoe UI", 0, 18)); // NOI18N
+        jLabel14.setText("jLabel14");
 
         javax.swing.GroupLayout jPanelSobreLayout = new javax.swing.GroupLayout(jPanelSobre);
         jPanelSobre.setLayout(jPanelSobreLayout);
         jPanelSobreLayout.setHorizontalGroup(
             jPanelSobreLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(jPanelSobreLayout.createSequentialGroup()
-                .addGap(255, 255, 255)
-                .addComponent(jLabel2SOBRE, javax.swing.GroupLayout.PREFERRED_SIZE, 365, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addContainerGap(180, Short.MAX_VALUE))
+                .addContainerGap()
+                .addGroup(jPanelSobreLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(jLabel10, javax.swing.GroupLayout.DEFAULT_SIZE, 788, Short.MAX_VALUE)
+                    .addComponent(jLabel12, javax.swing.GroupLayout.PREFERRED_SIZE, 0, Short.MAX_VALUE)
+                    .addComponent(jLabel11)
+                    .addComponent(jLabel13))
+                .addContainerGap())
+            .addGroup(jPanelSobreLayout.createSequentialGroup()
+                .addGap(332, 332, 332)
+                .addComponent(jLabel14)
+                .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
         );
         jPanelSobreLayout.setVerticalGroup(
             jPanelSobreLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(jPanelSobreLayout.createSequentialGroup()
-                .addGap(233, 233, 233)
-                .addComponent(jLabel2SOBRE, javax.swing.GroupLayout.PREFERRED_SIZE, 209, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addContainerGap(158, Short.MAX_VALUE))
+                .addGap(23, 23, 23)
+                .addComponent(jLabel10, javax.swing.GroupLayout.PREFERRED_SIZE, 65, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jLabel12, javax.swing.GroupLayout.PREFERRED_SIZE, 83, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGap(8, 8, 8)
+                .addComponent(jLabel14)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jLabel11, javax.swing.GroupLayout.PREFERRED_SIZE, 147, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                .addComponent(jLabel13)
+                .addContainerGap())
         );
 
         jPanelWelcome.add(jPanelSobre, "telaSobre");
@@ -130,11 +248,19 @@ public class TelaPrincipal extends javax.swing.JFrame {
 
         jPanelWelcome.add(jPanelHistorico, "telaHistorico");
 
+        jLabel1.setText("BEM-Vindo");
+        jPanelWelcome.add(jLabel1, "card6");
+
         jMenuIniciar.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/application.png"))); // NOI18N
         jMenuIniciar.setText("Iniciar");
 
         jMenuItemWelcome.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/house.png"))); // NOI18N
         jMenuItemWelcome.setText("Menu inicial");
+        jMenuItemWelcome.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jMenuItemWelcomeActionPerformed(evt);
+            }
+        });
         jMenuIniciar.add(jMenuItemWelcome);
 
         jMenuItemRunWithout.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/application_go.png"))); // NOI18N
@@ -309,6 +435,12 @@ public class TelaPrincipal extends javax.swing.JFrame {
         }
     }//GEN-LAST:event_jMenuItemReconstrucaoActionPerformed
 
+    private void jMenuItemWelcomeActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItemWelcomeActionPerformed
+        // TODO add your handling code here:
+        CardLayout cl = (CardLayout) jPanelWelcome.getLayout();
+        cl.show(jPanelWelcome, "telaInicial");
+    }//GEN-LAST:event_jMenuItemWelcomeActionPerformed
+
     /**
      * @param args the command line arguments
      */
@@ -345,10 +477,22 @@ public class TelaPrincipal extends javax.swing.JFrame {
     }
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
+    private javax.swing.JLabel jLabel1;
+    private javax.swing.JLabel jLabel10;
+    private javax.swing.JLabel jLabel11;
+    private javax.swing.JLabel jLabel12;
+    private javax.swing.JLabel jLabel13;
+    private javax.swing.JLabel jLabel14;
     private javax.swing.JLabel jLabel1HISTORICO;
     private javax.swing.JLabel jLabel1TUTORIAL;
-    private javax.swing.JLabel jLabel2SOBRE;
-    private javax.swing.JLabel jLabel3WELCOME;
+    private javax.swing.JLabel jLabel2;
+    private javax.swing.JLabel jLabel3;
+    private javax.swing.JLabel jLabel4;
+    private javax.swing.JLabel jLabel5;
+    private javax.swing.JLabel jLabel6;
+    private javax.swing.JLabel jLabel7;
+    private javax.swing.JLabel jLabel8;
+    private javax.swing.JLabel jLabel9;
     private javax.swing.JMenuBar jMenuBar;
     private javax.swing.JMenu jMenuHistorico;
     private javax.swing.JMenu jMenuIniciar;
@@ -367,6 +511,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
     private javax.swing.JPanel jPanelHistorico;
     private javax.swing.JPanel jPanelSobre;
     private javax.swing.JPanel jPanelTutorial;
+    private javax.swing.JPanel jPanelWELCOME2;
     private javax.swing.JPanel jPanelWelcome;
     // End of variables declaration//GEN-END:variables
 }

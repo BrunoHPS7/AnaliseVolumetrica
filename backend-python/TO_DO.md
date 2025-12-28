@@ -5,7 +5,7 @@
 		- [ ] .ini
 		- [ ] Filtros
 - [ ] Script MeshLab
-- [ ] Criação do config.yaml 
+- [x] Criação do config.yaml 
 - [ ] Interface da Aplicação
 	- [ ] Chamar a Calibração da Câmera
 	- [ ] Chamar a Extração de Frames
