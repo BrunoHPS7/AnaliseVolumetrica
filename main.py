@@ -2,6 +2,9 @@ import yaml
 import sys
 import platform
 import os
+import subprocess  # <--- Faltava esta linha!
+import tkinter as tk
+from tkinter import filedialog, messagebox
 
 # Seus imports
 from src.camera_calibration import run_calibration_process
@@ -9,13 +12,64 @@ from src.acquisition import acquisition
 from src.reconstruction import run_colmap_reconstruction
 
 
+def normalize_path(p):
+    return p.replace("\\", "/")
+
+
+def selecionar_arquivo_video():
+    sistema = platform.system()
+    home = os.path.expanduser("~")
+    titulo = "Seleção de Vídeo"
+    mensagem = "Por favor, selecione o arquivo de vídeo para a extração de frames."
+
+    # --- LÓGICA LINUX (Zenity) ---
+    if sistema == "Linux":
+        try:
+            # Mostra o aviso informativo
+            subprocess.run(["zenity", "--info", "--title=" + titulo, "--text=" + mensagem, "--width=300"], check=True)
+
+            # Abre o seletor
+            comando = [
+                "zenity", "--file-selection",
+                "--title=" + titulo,
+                "--file-filter=Vídeos | *.mp4 *.avi *.mkv *.mov",
+                f"--filename={home}/"
+            ]
+
+            # shell=False é mais seguro. Se o usuário cancelar, o check_output lança CalledProcessError
+            caminho = subprocess.check_output(comando, stderr=subprocess.DEVNULL).decode("utf-8").strip()
+            return caminho if caminho else None
+
+        except subprocess.CalledProcessError as e:
+            # No Zenity, o código de retorno 1 significa que o usuário clicou em 'Cancelar' ou fechou a janela
+            if e.returncode == 1:
+                return None  # Encerra aqui mesmo, pois o usuário desistiu
+            # Se for outro erro (ex: comando não encontrado), ele continua para o fallback (Tkinter)
+            pass
+        except FileNotFoundError:
+            # Zenity não está instalado, vai para o fallback (Tkinter)
+            pass
+
+    # --- LÓGICA WINDOWS / MAC / FALLBACK (Só chega aqui se não for Linux ou se o Zenity não existir) ---
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+
+    messagebox.showinfo(titulo, mensagem)
+
+    caminho = filedialog.askopenfilename(
+        initialdir=home,
+        title=titulo,
+        filetypes=[("Arquivos de Vídeo", "*.mp4 *.avi *.mkv *.mov")]
+    )
+
+    root.destroy()
+    return caminho if caminho else None
+
+
 def load_config(path="config.yaml"):
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
-
-
-def normalize_path(p):
-    return p.replace("\\", "/")
 
 
 def run_calibration_module(cfg):
@@ -35,9 +89,17 @@ def run_calibration_module(cfg):
 
 def run_opencv_module(cfg):
     print("\n=== MÓDULO: OPENCV (EXTRAÇÃO) ===")
-    acq = acquisition()
+
+    # Chama o seletor nativo
+    video_escolhido = selecionar_arquivo_video()
+
+    if not video_escolhido:
+        print("Seleção de vídeo cancelada. Pulando este módulo.")
+        return
+
+    # Usa o caminho escolhido em vez do que está no cfg["paths"]["video_input"]
     acquisition.save_video_frames_fps(
-        video_path=normalize_path(cfg["paths"]["video_input"]),
+        video_path=normalize_path(video_escolhido),
         output_dir=normalize_path(cfg["paths"]["frames_output"]),
         desired_fps=cfg["parameters"]["acquisition"]["desired_fps"]
     )
