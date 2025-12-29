@@ -3,15 +3,14 @@ import numpy as np
 import glob
 import os
 
-
+# Obter nome da calibração para salvamento
 def obter_caminho_saida(pasta_destino):
-    """
-    Pergunta ao usuário o nome do arquivo e garante que ele não sobrescreva nada.
-    """
+    # Garantir existencia do path
     if not os.path.exists(pasta_destino):
         os.makedirs(pasta_destino)
         print(f"Pasta criada: {pasta_destino}")
 
+    # Capturar o nome do arquivo
     while True:
         nome_arquivo = input("\nDigite o nome para o arquivo de calibração (ex: calib_camera1.npz): ").strip()
 
@@ -23,12 +22,13 @@ def obter_caminho_saida(pasta_destino):
 
         if os.path.exists(caminho_completo):
             print(f"O arquivo '{nome_arquivo}' já existe em {pasta_destino}. Escolha outro nome.")
-            # Opcional: listar arquivos para ajudar o usuário
+            # listar arquivos para ajudar o usuário a não repetir nome
             print("\nArquivos na pasta: ", os.listdir(pasta_destino))
         else:
             return caminho_completo
 
 
+# Calibrar Camera:
 def run_calibration_process(settings: dict):
     chessboard_size = settings["checkerboard_size"]
     square_size = settings["square_size"]
@@ -74,7 +74,12 @@ def run_calibration_process(settings: dict):
 
     # Calibração Matemática
     print("Calculando matrizes...")
-    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
+    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
+        objpoints,
+        imgpoints,
+        gray.shape[::-1],
+        None,
+        None)
 
     if ret:
         print("Calibração bem sucedida!")

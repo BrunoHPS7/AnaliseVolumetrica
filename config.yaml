@@ -1,10 +1,10 @@
 # Define o que será executado: "OpenCV", "Reconstruction", "CameraCalibration", "Full", "History"
-execution_mode: "Full"
+execution_mode: "CameraCalibration"
 
 # Configurações de Caminhos (Paths)
 paths:
   # Calibração
-  calibration_images: "./data/in/images"
+  calibration_images: "./data/in/images_calibration"
   calibration_output_folder: "./data/out/calibrations"
 
   # Extração (OpenCV)

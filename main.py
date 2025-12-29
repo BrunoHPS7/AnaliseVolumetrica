@@ -5,24 +5,23 @@ import os
 import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox
-
-# Seus imports
 from src.camera_calibration import run_calibration_process
-from src.acquisition import acquisition
+from src.acquisition import save_video_frames_fps
 from src.reconstruction import run_colmap_reconstruction
 
 
+# Padronizar os caminhos entre Sistemas Operacionais:
 def normalize_path(p):
     return p.replace("\\", "/")
 
-
+# Seleção do video usado na extração de frames:
 def selecionar_arquivo_video():
     sistema = platform.system()
     home = os.path.expanduser("~")
     titulo = "Seleção de Vídeo"
     mensagem = "Por favor, selecione o arquivo de vídeo para a extração de frames."
 
-    # --- LÓGICA LINUX (Zenity) ---
+    # LÓGICA LINUX (Zenity)
     if sistema == "Linux":
         try:
             subprocess.run(["zenity", "--info", "--title=" + titulo, "--text=" + mensagem, "--width=300"], check=False)
@@ -44,7 +43,7 @@ def selecionar_arquivo_video():
         except FileNotFoundError:
             pass
 
-    # --- LÓGICA WINDOWS / FALLBACK ---
+    # LÓGICA WINDOWS / FALLBACK
     root = tk.Tk()
     root.withdraw()
     root.attributes('-topmost', True)
@@ -61,6 +60,7 @@ def selecionar_arquivo_video():
     return caminho if caminho else None
 
 
+# Abre a pasta data/out (Nosso Histórico):
 def abrir_pasta_historico():
     sistema = platform.system()
     caminho_historico = os.path.abspath("./data/out")
@@ -80,11 +80,13 @@ def abrir_pasta_historico():
         print(f"Erro ao abrir o gerenciador de arquivos: {e}")
 
 
+# Carrega as configurações do "config.yaml":
 def load_config(path="config.yaml"):
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
+# Módulo de Calibração:
 def run_calibration_module(cfg):
     print("\n=== MÓDULO: CAMERA CALIBRATION ===")
     settings = {
@@ -96,6 +98,7 @@ def run_calibration_module(cfg):
     run_calibration_process(settings)
 
 
+# Módulo de Extração:
 def run_opencv_module(cfg):
     print("\n=== MÓDULO: OPENCV (EXTRAÇÃO) ===")
     video_escolhido = selecionar_arquivo_video()
@@ -104,7 +107,7 @@ def run_opencv_module(cfg):
         print("[!] Seleção de vídeo cancelada. Pulando este módulo.")
         return False  # Retorna False para avisar o modo Full
 
-    acquisition.save_video_frames_fps(
+    save_video_frames_fps(
         video_path=normalize_path(video_escolhido),
         output_dir=normalize_path(cfg["paths"]["frames_output"]),
         desired_fps=cfg["parameters"]["acquisition"]["desired_fps"]
@@ -112,6 +115,7 @@ def run_opencv_module(cfg):
     return True
 
 
+# Módulo de Reconstrução:
 def run_reconstruction_module(cfg):
     print("\n=== MÓDULO: RECONSTRUCTION (COLMAP) ===")
     run_colmap_reconstruction(
@@ -121,6 +125,12 @@ def run_reconstruction_module(cfg):
     )
 
 
+# Módulo de Histórico:
+def run_history_module(cfg):
+    abrir_pasta_historico()
+
+
+# Pipeline Principal:
 if __name__ == "__main__":
     config = load_config()
     mode = config.get("execution_mode", "OpenCV")
@@ -146,7 +156,7 @@ if __name__ == "__main__":
                 print("[!] Processo Full interrompido pelo usuário.")
 
         elif mode == "History":
-            abrir_pasta_historico()
+            run_history_module(config)
 
         else:
             print(f"Modo '{mode}' desconhecido.")

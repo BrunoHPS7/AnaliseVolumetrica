@@ -8,8 +8,8 @@ from tkinter import filedialog, messagebox
 from tqdm import tqdm
 
 
+# Log para visuzalição da execução:
 def configurar_logging(pasta_projeto):
-    """Configura o log para registrar o progresso silenciosamente em arquivo."""
     log_file = os.path.join(pasta_projeto, "reconstruction.log")
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
@@ -23,12 +23,14 @@ def configurar_logging(pasta_projeto):
     return log_file
 
 
+# Padronizar os caminhos entre Sistemas Operacionais:
 def normalize_path(path: str) -> str:
     return path.replace("\\", "/")
 
 
+# Executa os comandos da pipeline via terminal com barra de progresso:
 def run_cmd(cmd, step_name):
-    """Executa comandos do COLMAP com barra de progresso."""
+    # Barra de Progresso
     progress_pattern = re.compile(r"\[(\d+)/(\d+)\]")
     print(f"\n> {step_name}")
 
@@ -45,7 +47,11 @@ def run_cmd(cmd, step_name):
         if match:
             atual, total = int(match.group(1)), int(match.group(2))
             if pbar is None:
-                pbar = tqdm(total=total, desc="  Progresso", unit="img", dynamic_ncols=True, colour='red')
+                pbar = tqdm(total=total,
+                            desc="  Progresso",
+                            unit="img",
+                            dynamic_ncols=True,
+                            colour='red') #Tambem podemos usar: "green", "yellow", "blue", "gray", ou Hexadecimais
             pbar.update(atual - ultimo_valor)
             ultimo_valor = atual
 
@@ -55,6 +61,7 @@ def run_cmd(cmd, step_name):
         raise subprocess.CalledProcessError(process.returncode, cmd)
 
 
+# Mensagem de Erro
 def exibir_mensagem_erro(mensagem, sistema):
     """Mostra erro nativo sem abrir seletor."""
     if sistema == "Linux":
@@ -68,6 +75,7 @@ def exibir_mensagem_erro(mensagem, sistema):
     print(f"\n[!] {mensagem}")
 
 
+# Selecionar a pasta de frames para a execução:
 def selecionar_pasta_frames(caminho_base_cfg):
     sistema = platform.system()
     caminho_alvo = os.path.abspath(caminho_base_cfg)
@@ -112,6 +120,7 @@ def selecionar_pasta_frames(caminho_base_cfg):
     return caminho if caminho else None
 
 
+# Obter a pasta na qual o usuario quer que a reconstrução seja salva
 def obter_pasta_reconstrucao(pasta_base_colmap):
     if not os.path.exists(pasta_base_colmap): os.makedirs(pasta_base_colmap, exist_ok=True)
     while True:
@@ -127,6 +136,7 @@ def obter_pasta_reconstrucao(pasta_base_colmap):
             return caminho_final
 
 
+# Pipeline da Reconstrução:
 def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
     # 1. Configurações de Hardware (Fácil de modificar aqui)
     CONFIG = {
