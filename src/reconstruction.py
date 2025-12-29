@@ -1,7 +1,7 @@
 import subprocess
 import os
 import platform
-import logging  # <--- Nova biblioteca
+import logging
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
@@ -10,7 +10,7 @@ def configurar_logging(pasta_projeto):
     """Configura o arquivo de log dentro da pasta do projeto atual."""
     log_file = os.path.join(pasta_projeto, "reconstruction.log")
 
-    # Remove handlers antigos se existirem para não duplicar logs
+    # Limpa handlers antigos
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
@@ -19,7 +19,7 @@ def configurar_logging(pasta_projeto):
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
             logging.FileHandler(log_file, encoding='utf-8'),
-            logging.StreamHandler()  # Mantém o print no terminal
+            logging.StreamHandler()
         ]
     )
     return log_file
@@ -38,75 +38,65 @@ def run_cmd(cmd):
     except subprocess.CalledProcessError as e:
         logging.error(f"Resultado: FALHA")
         logging.error(f"Erro detalhado: {e.stderr}")
-        raise e  # Repassa o erro para o bloco try/except principal
+        raise e
 
 
 def selecionar_pasta_frames(caminho_base_cfg):
-    sistema = platform.system()
-    caminho_alvo = os.path.abspath(caminho_base_cfg)
-
-    if not os.path.exists(caminho_alvo):
-        os.makedirs(caminho_alvo, exist_ok=True)
-
-    # TRATAMENTO DE PASTA VAZIA (Sem Log aqui ainda, pois não temos pasta de projeto)
-    conteudo = [f for f in os.listdir(caminho_alvo) if f != ".gitkeep"]
-    if not conteudo:
-        mensagem_erro = "Não foram encontrados frames. Realize a extração primeiro."
-        exibir_mensagem_erro(mensagem_erro, sistema)
-        return None
-
+    """Abre o seletor de pastas com o aviso padrão do projeto."""
+    home = os.path.abspath(caminho_base_cfg)
     titulo = "Seleção de Pasta de Frames"
-    if sistema == "Linux":
-        try:
-            caminho_forcado = os.path.join(caminho_alvo, "selecione_a_pasta_aqui")
-            comando = ["zenity", "--file-selection", "--directory", "--title=" + titulo,
-                       f"--filename={caminho_forcado}"]
-            caminho = subprocess.check_output(comando, stderr=subprocess.DEVNULL).decode("utf-8").strip()
-            return caminho if caminho else None
-        except subprocess.CalledProcessError:
-            return None
+
+    if not os.path.exists(home):
+        os.makedirs(home, exist_ok=True)
 
     root = tk.Tk()
     root.withdraw()
-    caminho = filedialog.askdirectory(initialdir=caminho_alvo, title=titulo)
+    root.attributes('-topmost', True)
+
+    # Aviso simples seguindo seu modelo
+    messagebox.showinfo(titulo, "Por favor, selecione a pasta de frames para a reconstrução.")
+
+    caminho = filedialog.askdirectory(
+        initialdir=home,
+        title=titulo,
+        mustexist=True
+    )
     root.destroy()
-    return caminho
-
-
-def exibir_mensagem_erro(mensagem, sistema):
-    if sistema == "Linux":
-        subprocess.run(["zenity", "--error", "--text=" + mensagem])
-    else:
-        root = tk.Tk();
-        root.withdraw()
-        messagebox.showerror("Erro", mensagem)
-        root.destroy()
+    return caminho if caminho else None
 
 
 def obter_pasta_reconstrucao(pasta_base_colmap):
-    if not os.path.exists(pasta_base_colmap): os.makedirs(pasta_base_colmap)
+    """Solicita o nome do projeto via terminal."""
+    if not os.path.exists(pasta_base_colmap):
+        os.makedirs(pasta_base_colmap, exist_ok=True)
+
     while True:
-        nome_projeto = input("\nNome da nova reconstrução: ").strip()
+        nome_projeto = input("\nNome da nova reconstrução (Pasta de saída): ").strip()
         if not nome_projeto: continue
+
         caminho_final = os.path.join(pasta_base_colmap, nome_projeto)
         if os.path.exists(caminho_final):
-            print(f"Já existe. Projetos: {os.listdir(pasta_base_colmap)}")
+            print(f"A pasta '{nome_projeto}' já existe. Escolha outro nome.")
         else:
-            os.makedirs(caminho_final);
+            os.makedirs(caminho_final)
             return caminho_final
 
 
 def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
+    """Inicia o processo de reconstrução COLMAP."""
+
+    # Chama o seletor com o aviso que você pediu
     pasta_frames_selecionada = selecionar_pasta_frames(frames_root_dir)
-    if not pasta_frames_selecionada: return
+
+    if not pasta_frames_selecionada:
+        print("\nSeleção de frames cancelada.")
+        return
 
     pasta_saida_projeto = obter_pasta_reconstrucao(colmap_root_dir)
 
-    # INICIALIZA O LOG DENTRO DA PASTA DO PROJETO
+    # Inicializa Log e caminhos
     log_path = configurar_logging(pasta_saida_projeto)
     logging.info("=== INICIANDO PIPELINE DE RECONSTRUÇÃO ===")
-    logging.info(f"Origem: {pasta_frames_selecionada}")
-    logging.info(f"Destino: {pasta_saida_projeto}")
 
     image_dir = normalize_path(pasta_frames_selecionada)
     project_dir = normalize_path(pasta_saida_projeto)
@@ -119,23 +109,20 @@ def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
     os.makedirs(dense_dir, exist_ok=True)
 
     try:
-        # Etapa 1
+        # Pipeline COLMAP
         logging.info("Etapa 1/7: Feature Extractor")
         run_cmd(
             f"colmap feature_extractor --database_path {database_path} --image_path {image_dir} --SiftExtraction.use_gpu 0")
 
-        # Etapa 2
-        logging.info("Etapa 2/7: Exhaustive Matcher")
+        logging.info("Etapa 2/7: Matcher")
         run_cmd(f"colmap exhaustive_matcher --database_path {database_path} --SiftMatching.use_gpu 0")
 
-        # Etapa 3
         logging.info("Etapa 3/7: Mapper")
         run_cmd(f"colmap mapper --database_path {database_path} --image_path {image_dir} --output_path {sparse_dir}")
 
-        # Etapa 4 em diante...
         sparse_input = f"{sparse_dir}/0"
         if os.path.exists(sparse_input):
-            logging.info("Etapa 4/7: Image Undistorter")
+            logging.info("Etapa 4/7: Undistorter")
             run_cmd(
                 f"colmap image_undistorter --image_path {image_dir} --input_path {sparse_input} --output_path {dense_dir} --output_type COLMAP")
 
@@ -150,10 +137,9 @@ def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
             meshed_ply = f"{dense_dir}/meshed_poisson.ply"
             run_cmd(f"colmap poisson_mesher --input_path {fused_ply} --output_path {meshed_ply}")
 
-            logging.info("=== RECONSTRUÇÃO FINALIZADA COM SUCESSO ===")
+            print(f"\n[SUCESSO] Reconstrução finalizada: {project_dir}")
         else:
-            logging.error("Falha crítica: Pasta 'sparse/0' não gerada pelo Mapper.")
+            logging.error("O modelo esparso não foi gerado.")
 
     except Exception as e:
-        logging.critical(f"Pipeline interrompido devido a erro crítico: {str(e)}")
-        print(f"\n[ERRO] Verifique o arquivo de log em: {log_path}")
+        print(f"\n[ERRO] Ocorreu uma falha no pipeline. Verifique os logs em {pasta_saida_projeto}")
