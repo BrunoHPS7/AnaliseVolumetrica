@@ -2,6 +2,7 @@ import yaml
 import sys
 import platform
 import os
+import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
@@ -16,22 +17,67 @@ def normalize_path(p):
 
 
 def selecionar_arquivo_video():
+    sistema = platform.system()
     home = os.path.expanduser("~")
     titulo = "Seleção de Vídeo"
+    mensagem = "Por favor, selecione o arquivo de vídeo para a extração de frames."
 
+    # --- LÓGICA LINUX (Zenity) ---
+    if sistema == "Linux":
+        try:
+            subprocess.run(["zenity", "--info", "--title=" + titulo, "--text=" + mensagem, "--width=300"], check=False)
+
+            comando = [
+                "zenity", "--file-selection",
+                "--title=" + titulo,
+                "--file-filter=Vídeos | *.mp4 *.avi *.mkv *.mov",
+                f"--filename={home}/"
+            ]
+
+            caminho = subprocess.check_output(comando, stderr=subprocess.DEVNULL).decode("utf-8").strip()
+            return caminho if caminho else None
+
+        except subprocess.CalledProcessError as e:
+            if e.returncode == 1:  # Usuário clicou em cancelar
+                return None
+            pass
+        except FileNotFoundError:
+            pass
+
+    # --- LÓGICA WINDOWS / FALLBACK ---
     root = tk.Tk()
     root.withdraw()
     root.attributes('-topmost', True)
 
-    messagebox.showinfo(titulo, "Por favor, selecione o arquivo de vídeo para extração.")
+    messagebox.showinfo(titulo, mensagem)
 
     caminho = filedialog.askopenfilename(
         initialdir=home,
         title=titulo,
-        filetypes=[("Vídeos", "*.mp4 *.avi *.mkv *.mov")]
+        filetypes=[("Arquivos de Vídeo", "*.mp4 *.avi *.mkv *.mov")]
     )
+
     root.destroy()
     return caminho if caminho else None
+
+
+def abrir_pasta_historico():
+    sistema = platform.system()
+    caminho_historico = os.path.abspath("./data/out")
+
+    if not os.path.exists(caminho_historico):
+        os.makedirs(caminho_historico, exist_ok=True)
+
+    print(f"Abrindo pasta de histórico: {caminho_historico}")
+    try:
+        if sistema == "Windows":
+            os.startfile(caminho_historico)
+        elif sistema == "Darwin":  # macOS
+            subprocess.run(["open", caminho_historico])
+        else:  # Linux
+            subprocess.run(["xdg-open", caminho_historico], check=True)
+    except Exception as e:
+        print(f"Erro ao abrir o gerenciador de arquivos: {e}")
 
 
 def load_config(path="config.yaml"):
@@ -53,9 +99,10 @@ def run_calibration_module(cfg):
 def run_opencv_module(cfg):
     print("\n=== MÓDULO: OPENCV (EXTRAÇÃO) ===")
     video_escolhido = selecionar_arquivo_video()
+
     if not video_escolhido:
-        print("Seleção cancelada.")
-        return False
+        print("[!] Seleção de vídeo cancelada. Pulando este módulo.")
+        return False  # Retorna False para avisar o modo Full
 
     acquisition.save_video_frames_fps(
         video_path=normalize_path(video_escolhido),
@@ -91,18 +138,19 @@ if __name__ == "__main__":
             run_reconstruction_module(config)
 
         elif mode == "Full":
-            # Calibração -> Extração -> Reconstrução
             run_calibration_module(config)
-
+            # Se cancelar o vídeo, não tenta rodar o COLMAP sem frames
             if run_opencv_module(config):
-                # O aviso de "Selecione a pasta" aparecerá agora
                 run_reconstruction_module(config)
             else:
-                print("Processo interrompido: vídeo não selecionado.")
+                print("[!] Processo Full interrompido pelo usuário.")
 
         elif mode == "History":
-            # Adicione sua lógica de abrir pasta aqui se necessário
-            pass
+            abrir_pasta_historico()
+
+        else:
+            print(f"Modo '{mode}' desconhecido.")
 
     except KeyboardInterrupt:
+        print("\nSaindo...")
         sys.exit(0)

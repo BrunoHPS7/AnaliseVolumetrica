@@ -1,5 +1,5 @@
 # Define o que será executado: "OpenCV", "Reconstruction", "CameraCalibration", "Full", "History"
-execution_mode: "Reconstruction"
+execution_mode: "Full"
 
 # Configurações de Caminhos (Paths)
 paths:
