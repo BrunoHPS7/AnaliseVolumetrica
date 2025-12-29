@@ -75,7 +75,7 @@ def selecionar_pasta_frames(caminho_base_cfg):
     if not os.path.exists(caminho_alvo):
         os.makedirs(caminho_alvo, exist_ok=True)
 
-    # Verifica se há fotos (ignora .gitkeep)
+    # 1. Verifica se há conteúdo
     conteudo = [f for f in os.listdir(caminho_alvo) if f != ".gitkeep"]
     if not conteudo:
         mensagem = "A pasta de frames está vazia. Extraia os frames primeiro no módulo OpenCV."
@@ -83,22 +83,30 @@ def selecionar_pasta_frames(caminho_base_cfg):
         return None
 
     caminho = None
-    titulo = "Selecione a pasta que contém as fotos"
+    titulo_aviso = "Atenção: Seleção de Fotos"
+    instrucao = "Na próxima tela, selecione a PASTA que contém os frames para a reconstrução."
 
     if sistema == "Linux":
         try:
+            # No Linux, o Zenity já é uma janela que trava a execução
+            subprocess.run(["zenity", "--info", "--title=" + titulo_aviso, "--text=" + instrucao, "--width=300"])
             caminho_forcado = os.path.join(caminho_alvo, "selecione_a_pasta_aqui")
-            comando = ["zenity", "--file-selection", "--directory", "--title=" + titulo,
-                       f"--filename={caminho_forcado}"]
+            comando = ["zenity", "--file-selection", "--directory", f"--filename={caminho_forcado}"]
             caminho = subprocess.check_output(comando, stderr=subprocess.DEVNULL).decode("utf-8").strip()
         except:
             return None
 
-    if not caminho:
+    else:  # Windows
         root = tk.Tk()
         root.withdraw()
         root.attributes('-topmost', True)
-        caminho = filedialog.askdirectory(initialdir=caminho_alvo, title=titulo)
+
+        # O SEGREDO ESTÁ AQUI: messagebox.showinfo trava o código até o OK ser clicado
+        messagebox.showinfo(titulo_aviso, instrucao)
+
+        # Agora sim abre o seletor
+        caminho = filedialog.askdirectory(initialdir=caminho_alvo, title="Selecione a pasta de frames")
+
         root.destroy()
 
     return caminho if caminho else None
