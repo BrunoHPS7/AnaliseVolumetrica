@@ -1,5 +1,5 @@
-# Define o que será executado: "OpenCV", "Reconstruction", "CameraCalibration" ou "Full"
-execution_mode: "Full"
+# Define o que será executado: "OpenCV", "Reconstruction", "CameraCalibration", "Full", "History"
+execution_mode: "Reconstruction"
 
 # Configurações de Caminhos (Paths)
 paths:
@@ -12,6 +12,7 @@ paths:
   frames_output: "./data/out/frames"
 
   # Reconstrução (Colmap)
+  colmap_input: "./data/out/frames"
   colmap_output: "./data/out/reconstructions"
   resources: "./resources"
 
