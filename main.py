@@ -67,6 +67,31 @@ def selecionar_arquivo_video():
     return caminho if caminho else None
 
 
+def abrir_pasta_historico():
+    sistema = platform.system()
+    # Caminho que você deseja que o usuário visualize
+    caminho_historico = os.path.abspath("./data/out")
+
+    # Garante que a pasta existe antes de tentar abrir
+    if not os.path.exists(caminho_historico):
+        os.makedirs(caminho_historico, exist_ok=True)
+
+    try:
+        if sistema == "Windows":
+            # Abre o Explorer diretamente na pasta
+            os.startfile(caminho_historico)
+
+        elif sistema == "Darwin":  # macOS
+            subprocess.run(["open", caminho_historico])
+
+        else:  # Linux e outros Unix-like
+            # xdg-open é o comando padrão para abrir o gerenciador de arquivos padrão
+            subprocess.run(["xdg-open", caminho_historico], check=True)
+
+    except Exception as e:
+        print(f"Erro ao abrir o gerenciador de arquivos: {e}")
+
+
 def load_config(path="config.yaml"):
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
@@ -108,10 +133,14 @@ def run_opencv_module(cfg):
 def run_reconstruction_module(cfg):
     print("\n=== MÓDULO: RECONSTRUCTION (COLMAP) ===")
     run_colmap_reconstruction(
-        normalize_path(cfg["paths"]["frames_output"]),
+        normalize_path(cfg["paths"]["colmap_input"]),
         normalize_path(cfg["paths"]["colmap_output"]),
         normalize_path(cfg["paths"]["resources"])
     )
+
+def run_history(cfg):
+    abrir_pasta_historico()
+
 
 
 if __name__ == "__main__":
@@ -135,6 +164,9 @@ if __name__ == "__main__":
             run_calibration_module(config)
             run_opencv_module(config)
             run_reconstruction_module(config)
+
+        elif mode == "History":
+            run_history(config)
         else:
             print(f"Modo '{mode}' desconhecido.")
 

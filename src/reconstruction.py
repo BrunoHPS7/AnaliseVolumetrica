@@ -1,6 +1,8 @@
 import subprocess
 import os
-
+import platform
+import tkinter as tk
+from tkinter import filedialog, messagebox
 
 def normalize_path(path: str) -> str:
     return path.replace("\\", "/")
@@ -12,38 +14,93 @@ def run_cmd(cmd):
     subprocess.run(cmd, shell=True, check=True)
 
 
-def selecionar_pasta_frames(pasta_base_frames):
-    """
-    Lista as pastas de frames disponíveis começando a contagem em 1.
-    """
-    if not os.path.exists(pasta_base_frames):
-        print(f"Erro: Pasta base de frames não encontrada em: {pasta_base_frames}")
-        return None
+def selecionar_pasta_frames(caminho_base_cfg):
+    sistema = platform.system()
+    # 1. Resolve o caminho absoluto (Ex: /home/user/projeto/data/out/frames)
+    caminho_alvo = os.path.abspath(caminho_base_cfg)
 
-    pastas = [d for d in os.listdir(pasta_base_frames) if os.path.isdir(os.path.join(pasta_base_frames, d))]
+    # 2. Garante que a pasta raiz exista
+    if not os.path.exists(caminho_alvo):
+        os.makedirs(caminho_alvo, exist_ok=True)
 
-    if not pastas:
-        print(f"Erro: Nenhuma pasta de frames encontrada em {pasta_base_frames}. Extraia os frames primeiro.")
-        return None
+    # --- TRATAMENTO DE PASTA VAZIA (ANTES DE ABRIR NAVEGADOR) ---
+    # Listamos o conteúdo ignorando o .gitkeep
+    conteudo = [f for f in os.listdir(caminho_alvo) if f != ".gitkeep"]
 
-    print("\nFrames de vídeos disponíveis:")
-    for i, nome in enumerate(pastas):
-        # Exibe i + 1 para o usuário ver a lista começando em 1
-        print(f" [{i + 1}] {nome}")
+    if not conteudo:
+        mensagem_erro = (
+            "Não foram encontrados frames para reconstrução.\n\n"
+            "Por favor, realize a extração de frames (módulo OpenCV) primeiro."
+        )
+        # Mostra o aviso de erro e encerra a função ANTES de abrir o seletor
+        if sistema == "Linux":
+            subprocess.run(["zenity", "--error", "--title=Erro de Frames", "--text=" + mensagem_erro, "--width=400"])
+        else:
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showerror("Erro de Frames", mensagem_erro)
+            root.destroy()
 
-    while True:
+        print(f"\n[!] {mensagem_erro}")
+        return None  # Sai da função aqui, o navegador NÃO abre
+    # -----------------------------------------------------------
+
+    titulo = "Seleção de Pasta de Frames"
+
+    # --- LÓGICA LINUX (Zenity) ---
+    if sistema == "Linux":
         try:
-            escolha_usuario = int(input("\nDigite o número da pasta de frames que deseja usar: "))
+            # Mantemos o truque que você confirmou que funciona:
+            caminho_forcado = os.path.join(caminho_alvo, "selecione_a_pasta_aqui")
 
-            # Ajusta a escolha do usuário (subtrai 1) para voltar ao índice real da lista
-            indice_real = escolha_usuario - 1
+            comando = [
+                "zenity", "--file-selection",
+                "--directory",
+                "--title=" + titulo,
+                f"--filename={caminho_forcado}"
+            ]
 
-            if 0 <= indice_real < len(pastas):
-                return os.path.join(pasta_base_frames, pastas[indice_real])
-            else:
-                print(f"Opção inválida. Escolha um número entre 1 e {len(pastas)}.")
-        except ValueError:
-            print("Por favor, digite um número válido.")
+            caminho = subprocess.check_output(comando, stderr=subprocess.DEVNULL).decode("utf-8").strip()
+            return caminho if caminho else None
+
+        except subprocess.CalledProcessError as e:
+            if e.returncode == 1: return None
+            pass
+        except FileNotFoundError:
+            pass
+
+    # --- LÓGICA WINDOWS / FALLBACK (Tkinter) ---
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    caminho = filedialog.askdirectory(initialdir=caminho_alvo, title=titulo)
+    root.destroy()
+    return caminho if caminho else None
+
+
+def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
+    # ATENÇÃO: Chame a função apenas UMA VEZ para não abrir o navegador duplicado
+    pasta_frames_selecionada = selecionar_pasta_frames(frames_root_dir)
+
+    if not pasta_frames_selecionada:
+        return
+
+    # O restante do seu código (obter_pasta_reconstrucao, colmap...) segue aqui
+    pasta_saida_projeto = obter_pasta_reconstrucao(colmap_root_dir)
+    # ...
+
+
+def exibir_mensagem_erro(mensagem, sistema):
+    """Função auxiliar para mostrar o erro sem abrir o seletor."""
+    if sistema == "Linux":
+        subprocess.run(["zenity", "--error", "--title=Erro de Frames", "--text=" + mensagem, "--width=400"])
+    else:
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Erro de Frames", mensagem)
+        root.destroy()
+    print(f"\n[!] {mensagem}")
+
 
 def obter_pasta_reconstrucao(pasta_base_colmap):
     """
@@ -70,12 +127,15 @@ def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
     """
     Pipeline completo: seleciona frames, define saída e roda COLMAP.
     """
-    # 1. Seleciona qual pasta de frames usar
+
+    # CHAMA APENAS UMA VEZ
     pasta_frames_selecionada = selecionar_pasta_frames(frames_root_dir)
+
+    # Se a pasta estava vazia ou o usuário cancelou, a função acima já deu o aviso e retornou None
     if not pasta_frames_selecionada:
         return
 
-    # 2. Define o nome da pasta de saída da reconstrução
+    # Se chegou aqui, temos uma pasta válida com arquivos
     pasta_saida_projeto = obter_pasta_reconstrucao(colmap_root_dir)
 
     print("\n========= COMEÇANDO RECONSTRUÇÃO COM O COLMAP =========")
