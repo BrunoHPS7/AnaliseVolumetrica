@@ -38,4 +38,27 @@ public class PythonClient {
     public static String reconstruir() throws Exception {
         return chamarBackend("/reconstruir");
     }
+
+    public static String execucaoNormal() throws Exception {
+        return chamarBackend("execucao-normal");
+    }
+    
+    public static String historico() throws Exception {
+        return chamarBackend("/historico");
+    }
+    
+
+    // APENAS PARA TESTES FUTUROS DE HISTÓRICO
+//     public static String historicoCalibracoes() throws Exception {
+//         return chamarBackend("/historico-calibracoes");
+//     }
+//     public static String historicoFrames() throws Exception {
+//         return chamarBackend("/historico-frames");
+//     }
+//     public static String historicoVideos() throws Exception {
+//         return chamarBackend("/historico-videos");
+//     }
+//     public static String historicoVolumes() throws Exception {
+//         return chamarBackend("/historico-volumes");
+//     }
 }

@@ -1,6 +1,14 @@
 # backend-python/app.py
+import os
+
 from flask import Flask, request, jsonify
-from main import load_config, run_calibration_module, run_opencv_module, run_reconstruction_module
+from services import (
+    load_config,
+    run_calibration_module,
+    run_opencv_module,
+    run_reconstruction_module,
+    run_full_module,
+    run_history_module)
 
 
 app = Flask(__name__)
@@ -32,7 +40,7 @@ def extrair_frames():
 
         return jsonify({
             "status": "ok",
-            "mensagem": "Calibração da câmera executada com sucesso."
+            "mensagem": "Extração de frames executada com sucesso."
         })
 
     except Exception as e:
@@ -50,7 +58,7 @@ def reconstruir():
 
         return jsonify({
             "status": "ok",
-            "mensagem": "Calibração da câmera executada com sucesso."
+            "mensagem": "Reconstrução executada com sucesso."
         })
 
     except Exception as e:
@@ -58,6 +66,60 @@ def reconstruir():
             "status": "erro",
             "mensagem": str(e)
         }), 500
+
+
+@app.route("/execucao-normal", methods=["POST"])
+def execucao_normal():
+    try:
+        cfg = load_config()
+        run_full_module(cfg)
+
+        return jsonify({
+            "status": "ok",
+            "mensagem": "Execução total executada com sucesso."
+        })
+
+    except Exception as e:
+        return jsonify({
+            "status": "erro",
+            "mensagem": str(e)
+        }), 500
+
+
+@app.route("/historico", methods=["GET"])
+def historico():
+    try:
+        cfg = load_config()
+
+        history_path = os.path.abspath(cfg["paths"]["history_output"])
+
+        # Garante que a pasta exista
+        os.makedirs(history_path, exist_ok=True)
+
+        return jsonify({
+            "status": "ok",
+            "path": history_path
+        })
+
+    except Exception as e:
+        return jsonify({
+            "status": "erro",
+            "mensagem": str(e)
+        }), 500
+
+
+# APENAS PARA TESTES FUTUROS DE HISTÓRICO
+# @app.route("/historico-calibracoes", methods=["GET"])
+# def historico_calibracoes():
+
+# @app.route("/historico-videos", methods=["GET"])
+# def historico_videos():
+
+# @app.route("/historico-frames", methods=["GET"])
+# def historico_frames():
+
+# @app.route("/historico-volumes", methods=["GET"])
+# def historico_volumes():
 
 
 if __name__ == "__main__":

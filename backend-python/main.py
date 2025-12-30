@@ -16,8 +16,7 @@ if __name__ == "__main__":
         elif mode == "Reconstruction":
             run_reconstruction_module(config)
         elif mode == "Full":
-                if run_opencv_module(config):
-                    run_reconstruction_module(config)
+            run_full_module(config)
         elif mode == "History":
             run_history_module(config)
         else:

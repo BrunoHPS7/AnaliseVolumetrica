@@ -1,0 +1,9 @@
+- [ ] consertar mensagens de JSON ao terminar uma execução
+- [ ] consertar botão "Execução normal"
+- [ ] adicionar métodos: execucao-com-tutorial, historicos personalizados
+- [ ] consertar chamada dos históricos nos botões da janela "Histórico"
+- [ ] consertar contador de arquivos nas pastas de histórico
+- [ ] fazer label do GitHub ser clicável
+- [ ] verificar erros agora existentes nas chamadas de métodos de services.py
+- [ ] escolher um nome para o software (mudar as labels)
+- [ ] criar o BackendLauncher
