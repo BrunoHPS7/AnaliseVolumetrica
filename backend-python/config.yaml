@@ -1,18 +1,19 @@
-# Define o que será executado: "OpenCV", "Reconstruction", "CameraCalibration" ou "Full"
-execution_mode: "CameraCalibration"
+# Define o que será executado: "OpenCV", "Reconstruction", "CameraCalibration", "Full", "History"
+execution_mode: "Full"
 
 # Configurações de Caminhos (Paths)
 paths:
   # Calibração
-  calibration_images: "./data/in/images"
-  calibration_output: "./data/out/camera_calibration_output/camera_calibration.npz"
+  calibration_input_folder: "./data/in/images_calibration"
+  calibration_output_folder: "./data/out/calibrations"
 
   # Extração (OpenCV)
-  video_input: "/home/Arquivos/Videos_Colmap/ventilador.mp4"
+  video_input: "./data/in/videos/Clio.mp4"
   frames_output: "./data/out/frames"
 
   # Reconstrução (Colmap)
-  colmap_output: "./data/out/colmap_output"
+  colmap_input: "./data/out/frames"
+  colmap_output: "./data/out/reconstructions"
   resources: "./resources"
 
 # Parâmetros Técnicos dos Módulos

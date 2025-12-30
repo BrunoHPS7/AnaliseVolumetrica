@@ -1,6 +1,13 @@
-# Dependências do Projeto
+# Visão Computacional
 opencv-contrib-python
 numpy
 open3d
 trimesh
 tqdm
+
+# Interface / Imagens
+Pillow
+
+# Backend / Comunicação
+Flask
+PyYAML
