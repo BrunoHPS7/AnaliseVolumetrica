@@ -10,7 +10,7 @@ def abrir_interface_java():
             os.path.dirname(__file__),
             "..",
             "ui-java",
-            "target",
+            "release",
             "InterfaceUI.jar"
         )
     )
