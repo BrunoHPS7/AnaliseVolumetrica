@@ -279,7 +279,7 @@ def obter_pasta_reconstrucao(pasta_base_colmap):
 # Pipeline Principal
 def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
     sistema = platform.system()
-    CONFIG = {"threads": 6, "use_gpu": 1, "gpu_index": "0", "max_img_size": 4000}
+    CONFIG = {"threads": 5, "use_gpu": 1, "gpu_index": "0", "max_img_size": 4000}
 
     pasta_frames = selecionar_pasta_frames(frames_root_dir)
     if not pasta_frames: return

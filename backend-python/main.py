@@ -1,3 +1,10 @@
+# -------------------------------------------------------------------------
+# Copyright (c) 2026 BrunoHPS7
+# Todos os direitos reservados.
+# Este código é distribuído sob a Licença MIT.
+# A cópia integral ou parcial deve incluir este aviso de direitos autorais.
+# -------------------------------------------------------------------------
+
 import sys
 import subprocess
 import os
@@ -10,7 +17,7 @@ def abrir_interface_java():
             os.path.dirname(__file__),
             "..",
             "ui-java",
-            "target",
+            "release",
             "InterfaceUI.jar"
         )
     )
