@@ -1,10 +1,18 @@
-package views;
+package br.analisevolumetrica.ui.views;
 
+import br.analisevolumetrica.ui.services.PythonClient;
 import java.awt.CardLayout;
 import javax.swing.JOptionPane;
-import services.PythonClient;
 import com.formdev.flatlaf.themes.FlatMacLightLaf;
+import java.awt.Cursor;
 import java.io.File;
+import java.awt.Desktop;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.util.concurrent.Callable;
+import javax.swing.JButton;
+import javax.swing.JPanel;
+import org.json.JSONObject;
 
 /**
  *
@@ -18,6 +26,12 @@ public class TelaPrincipal extends javax.swing.JFrame {
         estilizarBotoesHistorico();
         atualizarContadoresHistorico();
         configurarInteracaoCards();
+        configurarLinkGitHub();
+        
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Encerrando aplicação... Enviando sinal para o Python.");
+            PythonClient.encerrarServidor();
+        }));
     }
     
     private void configurarInteracaoCards() {
@@ -27,120 +41,70 @@ public class TelaPrincipal extends javax.swing.JFrame {
         adicionarEfeitoHoverCard(jCardVolumes, jButtonVolumes);
     }
 
-    private void adicionarEfeitoHoverCard(javax.swing.JPanel panel, javax.swing.JButton btn) {
-        String corDestaque = "#007AFF"; 
-        
-        // ESTILO NORMAL
-        String estiloNormal = 
-            "arc:16;" +
+    private void adicionarEfeitoHoverCard(JPanel panel, JButton btn) {
+        String azul = "#007AFF";
+
+        String normal =
+            "arc:20;" +
             "background:lighten(@background,3%);" +
-            "border:1,1,1,1,#E0E0E0;" +
-            "padding:12,12,12,12";
+            "border:1,1,1,1,#E0E0E0;";
 
-        // ESTILO HOVER
-        String estiloHover = 
-            "arc:16;" +
+        String hover =
+            "arc:20;" +
             "background:lighten(@background,8%);" +
-            "border:2,2,2,2," + corDestaque + ";" +
-            "padding:11,11,11,11";
+            "border:2,2,2,2," + azul + ";";
 
-        // 1. Configuração inicial do Painel
-        panel.putClientProperty("FlatLaf.style", estiloNormal);
+        panel.putClientProperty("FlatLaf.style", normal);
+        panel.setCursor(new Cursor(Cursor.HAND_CURSOR));
 
-        // 2. Eventos do Mouse no PAINEL (Fundo do Card)
-        panel.addMouseListener(new java.awt.event.MouseAdapter() {
+        panel.addMouseListener(new MouseAdapter() {
+
             @Override
-            public void mouseEntered(java.awt.event.MouseEvent evt) {
-                panel.putClientProperty("FlatLaf.style", estiloHover);
-                panel.setCursor(new java.awt.Cursor(java.awt.Cursor.HAND_CURSOR));
+            public void mouseEntered(MouseEvent e) {
+                panel.putClientProperty("FlatLaf.style", hover);
             }
 
             @Override
-            public void mouseExited(java.awt.event.MouseEvent evt) {
-                panel.putClientProperty("FlatLaf.style", estiloNormal);
-                panel.setCursor(new java.awt.Cursor(java.awt.Cursor.DEFAULT_CURSOR));
-            }
-        });
-
-        // 3. Eventos do Mouse no BOTÃO (Correção do Problema)
-        // Quando o mouse entra no botão, ele força o Painel a ficar no estado Hover
-        btn.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override
-            public void mouseEntered(java.awt.event.MouseEvent evt) {
-                // Força o card a crescer mesmo estando sobre o botão
-                panel.putClientProperty("FlatLaf.style", estiloHover);
+            public void mouseExited(MouseEvent e) {
+                panel.putClientProperty("FlatLaf.style", normal);
             }
 
             @Override
-            public void mouseExited(java.awt.event.MouseEvent evt) {
-                // Lógica Inteligente:
-                // Se o mouse sair do botão, mas for para o fundo do Card (Painel), 
-                // NÃO voltamos ao normal. Só voltamos se sair do Card totalmente.
-                java.awt.Point p = javax.swing.SwingUtilities.convertPoint(btn, evt.getPoint(), panel);
-                if (!panel.contains(p)) {
-                    panel.putClientProperty("FlatLaf.style", estiloNormal);
-                }
+            public void mouseClicked(MouseEvent e) {
+                btn.doClick();
             }
         });
-    }
-    
-    private void atualizarContadoresHistorico() {
-        int calibracoes = contarArquivos("../../../backend-python/data/out/calibracoes");
-        int videos = contarArquivos("../../../backend-python/data/out/videos");
-        int frames = contarArquivos("../../../backend-python/data/out/frames");
-        int volumes = contarArquivos("../../../backend-python/data/out/volumes");
-
-        jLabel18.setText("Calibrações: " + calibracoes);
-        jLabel19.setText("Vídeos: " + videos);
-        jLabel20.setText("Frames: " + frames);
-        jLabel21.setText("Volumes: " + volumes);
-    }
-    
-    private int contarArquivos(String caminho) {
-        File pasta = new File(caminho);
-        if (!pasta.exists() || !pasta.isDirectory()) return 0;
-
-        File[] arquivos = pasta.listFiles(File::isFile);
-        return arquivos != null ? arquivos.length : 0;
     }
     
     private void estilizarBotoesHistorico() {
-        String corDestaque = "#007AFF"; // Azul Apple/Mac
+        String corDestaque = "#007AFF";
 
-        configurarBotaoOutline(jButtonCalibracoes, corDestaque); // Calibrações
-        configurarBotaoOutline(jButtonVideos, corDestaque); // Vídeos
-        configurarBotaoOutline(jButtonFrames, corDestaque); // Frames
-        configurarBotaoOutline(jButtonVolumes, corDestaque); // Volumes
+        configurarBotaoOutline(jButtonCalibracoes, corDestaque);
+        configurarBotaoOutline(jButtonVideos, corDestaque);
+        configurarBotaoOutline(jButtonFrames, corDestaque);
+        configurarBotaoOutline(jButtonVolumes, corDestaque);
     }
 
     private void configurarBotaoOutline(javax.swing.JButton btn, String corHex) {
-        // ESTADO NORMAL: Fundo branco, Borda Azul, Texto Azul
-        String estiloNormal = 
-            "arc: 12;" + 
-            "background: #FFFFFF;" + 
-            "foreground: " + corHex + ";" + 
-            "borderWidth: 1;" + 
-            "borderColor: " + corHex + ";" +
-            "focusWidth: 0;" + 
-            "font: bold 12";
+        String estiloNormal =
+            "arc:12;" +
+            "background:#FFFFFF;" +
+            "foreground:" + corHex + ";" +
+            "borderWidth:1;" +
+            "borderColor:" + corHex + ";" +
+            "focusWidth:0;" +
+            "font:bold 12";
 
-        // ESTADO HOVER: Fundo Azul, Texto Branco (Preenche o botão)
-        String estiloHover = 
-            "arc: 12;" + 
-            "background: " + corHex + ";" + 
-            "foreground: #FFFFFF;" + 
-            "borderWidth: 1;" + 
-            "borderColor: " + corHex + ";" +
-            "font: bold 12";
+        String estiloHover =
+            "arc:12;" +
+            "background:" + corHex + ";" +
+            "foreground:#FFFFFF;" +
+            "borderWidth:1;" +
+            "borderColor:" + corHex + ";" +
+            "font:bold 12";
 
-        // Aplica o estilo inicial
         btn.putClientProperty("FlatLaf.style", estiloNormal);
         btn.setCursor(new java.awt.Cursor(java.awt.Cursor.HAND_CURSOR));
-
-        // Remove Listeners antigos para não duplicar e adiciona o novo
-        for (java.awt.event.MouseListener ml : btn.getMouseListeners()) {
-            btn.removeMouseListener(ml);
-        }
 
         btn.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
@@ -152,22 +116,27 @@ public class TelaPrincipal extends javax.swing.JFrame {
             public void mouseExited(java.awt.event.MouseEvent evt) {
                 btn.putClientProperty("FlatLaf.style", estiloNormal);
             }
-            
+
             @Override
             public void mousePressed(java.awt.event.MouseEvent evt) {
-                // Efeito de clique (escurece um pouco)
-                btn.putClientProperty("FlatLaf.style", 
-                    "arc: 12; background: darken(" + corHex + ",10%); foreground: #FFFFFF; borderWidth: 0");
+                btn.putClientProperty(
+                    "FlatLaf.style",
+                    "arc:12;background:darken(" + corHex + ",10%);foreground:#FFFFFF;"
+                );
+            }
+
+            @Override
+            public void mouseReleased(java.awt.event.MouseEvent evt) {
+                if (btn.contains(evt.getPoint())) {
+                    btn.putClientProperty("FlatLaf.style", estiloHover);
+                } else {
+                    btn.putClientProperty("FlatLaf.style", estiloNormal);
+                }
             }
             
             @Override
-            public void mouseReleased(java.awt.event.MouseEvent evt) {
-                // Volta para o estado de hover se o mouse ainda estiver em cima
-                 if (btn.contains(evt.getPoint())) {
-                     btn.putClientProperty("FlatLaf.style", estiloHover);
-                 } else {
-                     btn.putClientProperty("FlatLaf.style", estiloNormal);
-                 }
+            public void mouseClicked(MouseEvent e) {
+                btn.doClick();
             }
         });
     }
@@ -182,6 +151,95 @@ public class TelaPrincipal extends javax.swing.JFrame {
         jCardVideos.putClientProperty("FlatLaf.style", cardStyle);
         jCardFrames.putClientProperty("FlatLaf.style", cardStyle);
         jCardVolumes.putClientProperty("FlatLaf.style", cardStyle);
+    }
+    
+    private void atualizarContadoresHistorico() {
+        new Thread(() -> {
+            try {
+                // pega o caminho absoluto
+                String pathCalib = obterPathDoBackend(PythonClient::historicoCalibracoes);
+                String pathVideos = obterPathDoBackend(PythonClient::historicoVideos);
+                String pathFrames = obterPathDoBackend(PythonClient::historicoFrames);
+                String pathVolumes = obterPathDoBackend(PythonClient::historicoVolumes);
+
+                int qtdCalib = contarArquivos(pathCalib);
+                int qtdVideos = contarArquivos(pathVideos);
+                int qtdFrames = contarArquivos(pathFrames);
+                int qtdVolumes = contarArquivos(pathVolumes);
+
+                javax.swing.SwingUtilities.invokeLater(() -> {
+                    jLabel18.setText("Calibrações: " + qtdCalib);
+                    jLabel19.setText("Vídeos: " + qtdVideos);
+                    jLabel20.setText("Frames: " + qtdFrames);
+                    jLabel21.setText("Volumes: " + qtdVolumes);
+                });
+
+            } catch (Exception e) {
+                System.out.println("Erro ao atualizar contadores: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    private String obterPathDoBackend(Callable<String> funcao) {
+        try {
+            String jsonString = funcao.call();
+            JSONObject json = new JSONObject(jsonString);
+            if (json.has("path")) {
+                return json.getString("path");
+            }
+        } catch (Exception e) {
+            System.out.println("Backend offline ou erro no JSON: " + e.getMessage());
+        }
+        return null;
+    }
+
+    private int contarArquivos(String caminho) {
+        if (caminho == null) return 0;
+        
+        File pasta = new File(caminho);
+
+        if (!pasta.exists() || !pasta.isDirectory()) return 0;
+
+        // contar arquivos e pastas.
+        File[] conteudo = pasta.listFiles(file ->
+            !file.isHidden() 
+        );
+
+        return conteudo != null ? conteudo.length : 0;
+    }
+    
+    private void configurarLinkGitHub() {
+        jLabelGitHub.setCursor(
+            Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        );
+
+        jLabelGitHub.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                try {
+                    if (!Desktop.isDesktopSupported()) {
+                        throw new UnsupportedOperationException(
+                            "Desktop API não suportada."
+                        );
+                    }
+
+                    Desktop.getDesktop().browse(
+                        new java.net.URI(
+                            "https://github.com/BrunoHPS7/AnaliseVolumetrica/"
+                        )
+                    );
+
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(
+                        TelaPrincipal.this, // 👈 importante
+                        "Erro ao abrir o link do GitHub.",
+                        "Erro",
+                        JOptionPane.ERROR_MESSAGE
+                    );
+                    ex.printStackTrace();
+                }
+            }
+        });
     }
 
     /**
@@ -211,7 +269,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
         jLabel14 = new javax.swing.JLabel();
         jLabel15 = new javax.swing.JLabel();
         jLabel22 = new javax.swing.JLabel();
-        jLabel1 = new javax.swing.JLabel();
+        jLabelGitHub = new javax.swing.JLabel();
         jPanelHistorico = new javax.swing.JPanel();
         jLabel16 = new javax.swing.JLabel();
         jLabel23 = new javax.swing.JLabel();
@@ -369,8 +427,8 @@ public class TelaPrincipal extends javax.swing.JFrame {
         jLabel22.setToolTipText("");
         jLabel22.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
 
-        jLabel1.setFont(new java.awt.Font("Segoe UI", 2, 16)); // NOI18N
-        jLabel1.setText("<HTML>Código disponível em: <a href=\"https://github.com/BrunoHPS7/AnaliseVolumetrica/\">GitHub</a></HTML>");
+        jLabelGitHub.setFont(new java.awt.Font("Segoe UI", 2, 16)); // NOI18N
+        jLabelGitHub.setText("<HTML>Código disponível em: <a style='color:#007AFF;'>GitHub</a></HTML>");
 
         javax.swing.GroupLayout jPanelSobreLayout = new javax.swing.GroupLayout(jPanelSobre);
         jPanelSobre.setLayout(jPanelSobreLayout);
@@ -386,7 +444,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
                                 .addContainerGap()
                                 .addComponent(jLabel13, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)))
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                        .addComponent(jLabel1, javax.swing.GroupLayout.PREFERRED_SIZE, 216, javax.swing.GroupLayout.PREFERRED_SIZE)
+                        .addComponent(jLabelGitHub, javax.swing.GroupLayout.PREFERRED_SIZE, 216, javax.swing.GroupLayout.PREFERRED_SIZE)
                         .addGap(17, 17, 17))
                     .addGroup(jPanelSobreLayout.createSequentialGroup()
                         .addContainerGap()
@@ -413,7 +471,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
                         .addComponent(jLabel15, javax.swing.GroupLayout.PREFERRED_SIZE, 40, javax.swing.GroupLayout.PREFERRED_SIZE)
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                         .addComponent(jLabel13, javax.swing.GroupLayout.PREFERRED_SIZE, 70, javax.swing.GroupLayout.PREFERRED_SIZE))
-                    .addComponent(jLabel1, javax.swing.GroupLayout.PREFERRED_SIZE, 28, javax.swing.GroupLayout.PREFERRED_SIZE))
+                    .addComponent(jLabelGitHub, javax.swing.GroupLayout.PREFERRED_SIZE, 28, javax.swing.GroupLayout.PREFERRED_SIZE))
                 .addContainerGap(55, Short.MAX_VALUE))
         );
 
@@ -752,12 +810,10 @@ public class TelaPrincipal extends javax.swing.JFrame {
         
         jMenuTutorial.setSelected(false);
         jPanelWelcome.requestFocusInWindow();
-        
     }//GEN-LAST:event_jMenuTutorialMouseClicked
 
     private void jMenuSairMouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jMenuSairMouseClicked
         // TODO add your handling code here:
-        
         jMenuSair.setSelected(false);
         jPanelWelcome.requestFocusInWindow();
         
@@ -786,7 +842,6 @@ public class TelaPrincipal extends javax.swing.JFrame {
         
         jMenuSobre.setSelected(false);
         jPanelWelcome.requestFocusInWindow();
-        
     }//GEN-LAST:event_jMenuSobreMouseClicked
 
     private void jMenuHistoricoMouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jMenuHistoricoMouseClicked
@@ -794,9 +849,8 @@ public class TelaPrincipal extends javax.swing.JFrame {
         CardLayout cl = (CardLayout) jPanelWelcome.getLayout();
         cl.show(jPanelWelcome, "telaHistorico");
         
-        jMenuHistorico.setSelected(false);    // Remove o estado visual de "selecionado"
+        jMenuHistorico.setSelected(false);
         jPanelWelcome.requestFocusInWindow();
-        
     }//GEN-LAST:event_jMenuHistoricoMouseClicked
 
     private void jMenuItemCalibracaoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItemCalibracaoActionPerformed
@@ -804,6 +858,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
         try {
             String resposta = PythonClient.calibrarCamera();
             JOptionPane.showMessageDialog(this, resposta);
+            atualizarContadoresHistorico();
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Erro ao executar calibração");
         }
@@ -814,6 +869,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
         try {
             String resposta = PythonClient.extrairFrames();
             JOptionPane.showMessageDialog(this, resposta);
+            atualizarContadoresHistorico();
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Erro ao executar extração");
         }
@@ -824,6 +880,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
         try {
             String resposta = PythonClient.reconstruir();
             JOptionPane.showMessageDialog(this, resposta);
+            atualizarContadoresHistorico();
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Erro ao executar reconstrução");
         }
@@ -834,45 +891,74 @@ public class TelaPrincipal extends javax.swing.JFrame {
         CardLayout cl = (CardLayout) jPanelWelcome.getLayout();
         cl.show(jPanelWelcome, "telaInicial");
     }//GEN-LAST:event_jMenuItemWelcomeActionPerformed
+    
+    private void abrirPasta(String path) {
+        try {
+            File dir = new File(path);
 
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+
+            if (!Desktop.isDesktopSupported()) {
+                throw new UnsupportedOperationException("Desktop API não suportada.");
+            }
+
+            Desktop.getDesktop().open(dir);
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Erro ao abrir pasta:\n" + e.getMessage(),
+                "Erro",
+                JOptionPane.ERROR_MESSAGE
+            );
+            e.printStackTrace();
+        }
+    }
+    
+    private void abrirHistorico(Callable<String> chamada) {
+        try {
+            String resposta = chamada.call();
+            JSONObject json = new JSONObject(resposta);
+
+            if (!json.getString("status").equals("ok")) {
+                throw new RuntimeException(json.optString("mensagem", "Erro desconhecido"));
+            }
+
+            String path = json.getString("path");
+            abrirPasta(path);
+            System.out.println("Path recebido: " + path);
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Erro ao abrir histórico:\n" + e.getMessage(),
+                "Erro",
+                JOptionPane.ERROR_MESSAGE
+            );
+            e.printStackTrace();
+        }
+    }
+    
     private void jButtonCalibracoesActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonCalibracoesActionPerformed
         // TODO add your handling code here:
-        try {
-            String resposta = PythonClient.historico();
-            JOptionPane.showMessageDialog(this, resposta);
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Erro ao abrir o histórico");
-        }
+        abrirHistorico(PythonClient::historicoCalibracoes);
     }//GEN-LAST:event_jButtonCalibracoesActionPerformed
 
     private void jButtonVideosActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonVideosActionPerformed
         // TODO add your handling code here:
-        try {
-            String resposta = PythonClient.historico();
-            JOptionPane.showMessageDialog(this, resposta);
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Erro ao abrir o histórico");
-        }
+        abrirHistorico(PythonClient::historicoVideos);
     }//GEN-LAST:event_jButtonVideosActionPerformed
 
     private void jButtonFramesActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonFramesActionPerformed
         // TODO add your handling code here:
-        try {
-            String resposta = PythonClient.historico();
-            JOptionPane.showMessageDialog(this, resposta);
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Erro ao abrir o histórico");
-        }
+        abrirHistorico(PythonClient::historicoFrames);
     }//GEN-LAST:event_jButtonFramesActionPerformed
 
     private void jButtonVolumesActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonVolumesActionPerformed
         // TODO add your handling code here:
-        try {
-            String resposta = PythonClient.historico();
-            JOptionPane.showMessageDialog(this, resposta);
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Erro ao abrir o histórico");
-        }
+        abrirHistorico(PythonClient::historicoVolumes);
     }//GEN-LAST:event_jButtonVolumesActionPerformed
 
     private void jMenuItemRunWithoutActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItemRunWithoutActionPerformed
@@ -880,6 +966,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
         try {
             String resposta = PythonClient.execucaoNormal();
             JOptionPane.showMessageDialog(this, resposta);
+            atualizarContadoresHistorico();
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Erro ao executar o programa");
         }
@@ -897,7 +984,6 @@ public class TelaPrincipal extends javax.swing.JFrame {
         javax.swing.UIManager.put("Button.arc", 12);
         javax.swing.UIManager.put("TextComponent.arc", 10);
         javax.swing.UIManager.put("ScrollBar.width", 14);
-
         
         /* Create and display the form */
         java.awt.EventQueue.invokeLater(new Runnable() {
@@ -916,7 +1002,6 @@ public class TelaPrincipal extends javax.swing.JFrame {
     private javax.swing.JPanel jCardFrames;
     private javax.swing.JPanel jCardVideos;
     private javax.swing.JPanel jCardVolumes;
-    private javax.swing.JLabel jLabel1;
     private javax.swing.JLabel jLabel10;
     private javax.swing.JLabel jLabel11;
     private javax.swing.JLabel jLabel12;
@@ -939,6 +1024,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
     private javax.swing.JLabel jLabel7;
     private javax.swing.JLabel jLabel8;
     private javax.swing.JLabel jLabel9;
+    private javax.swing.JLabel jLabelGitHub;
     private javax.swing.JMenuBar jMenuBar;
     private javax.swing.JMenu jMenuHistorico;
     private javax.swing.JMenu jMenuIniciar;

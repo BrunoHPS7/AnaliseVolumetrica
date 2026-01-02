@@ -358,7 +358,7 @@
                                   </Group>
                               </Group>
                               <EmptySpace max="32767" attributes="0"/>
-                              <Component id="jLabel1" min="-2" pref="216" max="-2" attributes="0"/>
+                              <Component id="jLabelGitHub" min="-2" pref="216" max="-2" attributes="0"/>
                               <EmptySpace min="-2" pref="17" max="-2" attributes="0"/>
                           </Group>
                           <Group type="102" alignment="0" attributes="0">
@@ -392,7 +392,7 @@
                               <EmptySpace max="-2" attributes="0"/>
                               <Component id="jLabel13" min="-2" pref="70" max="-2" attributes="0"/>
                           </Group>
-                          <Component id="jLabel1" min="-2" pref="28" max="-2" attributes="0"/>
+                          <Component id="jLabelGitHub" min="-2" pref="28" max="-2" attributes="0"/>
                       </Group>
                       <EmptySpace pref="55" max="32767" attributes="0"/>
                   </Group>
@@ -459,12 +459,12 @@
                 <Property name="horizontalTextPosition" type="int" value="0"/>
               </Properties>
             </Component>
-            <Component class="javax.swing.JLabel" name="jLabel1">
+            <Component class="javax.swing.JLabel" name="jLabelGitHub">
               <Properties>
                 <Property name="font" type="java.awt.Font" editor="org.netbeans.beaninfo.editors.FontEditor">
                   <Font name="Segoe UI" size="16" style="2"/>
                 </Property>
-                <Property name="text" type="java.lang.String" value="&lt;HTML&gt;C&#xf3;digo dispon&#xed;vel em: &lt;a href=&quot;https://github.com/BrunoHPS7/AnaliseVolumetrica/&quot;&gt;GitHub&lt;/a&gt;&lt;/HTML&gt;"/>
+                <Property name="text" type="java.lang.String" value="&lt;HTML&gt;C&#xf3;digo dispon&#xed;vel em: &lt;a style=&apos;color:#007AFF;&apos;&gt;GitHub&lt;/a&gt;&lt;/HTML&gt;"/>
               </Properties>
             </Component>
           </SubComponents>

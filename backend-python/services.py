@@ -232,7 +232,3 @@ def run_reconstruction_module(cfg):
 def run_full_module(cfg):
     run_opencv_module(cfg)
     run_reconstruction_module(cfg)
-
-# Módulo de Histórico:
-def run_history_module(cfg):
-    abrir_pasta_historico()

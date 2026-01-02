@@ -70,21 +70,3 @@ def selecionar_arquivo_video():
     )
     root.destroy()
     return caminho if caminho else None
-
-
-# Abre a pasta data/out (Histórico):
-def abrir_pasta_historico():
-    sistema = platform.system()
-    caminho_historico = os.path.abspath("./data/out")
-    if not os.path.exists(caminho_historico):
-        os.makedirs(caminho_historico, exist_ok=True)
-
-    try:
-        if sistema == "Windows":
-            os.startfile(caminho_historico)
-        elif sistema == "Darwin":
-            subprocess.run(["open", caminho_historico])
-        else:
-            subprocess.run(["xdg-open", caminho_historico], check=True)
-    except Exception as e:
-        print(f"Erro ao abrir o gerenciador de arquivos: {e}")
