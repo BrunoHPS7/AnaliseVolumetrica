@@ -1,6 +1,0 @@
-# Dependências do Projeto
-opencv-contrib-python
-numpy
-open3d
-trimesh
-tqdm
