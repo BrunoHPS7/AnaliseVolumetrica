@@ -36,6 +36,7 @@ nbdist/
 .nb-gradle/
 target/
 
+
 ### IntelliJ IDEA ###
 out/
 !**/src/main/**/out/
@@ -46,3 +47,6 @@ out/
 # ======================
 .DS_Store
 Thumbs.db
+
+# Project docs not tracked
+AGENTS.md

@@ -425,9 +425,13 @@ def run_volume_module(cfg):
                 parent=root_master
             )
 
+    volume_m3 = float(result["volume"])
+    volume_liters = volume_m3 * 1000.0
+    volume_cm3 = volume_m3 * 1e6
+
     result_payload = {
         "mesh_path": normalize_path(mesh_path),
-        "volume": float(result["volume"]),
+        "volume": volume_m3,
         "unit": result["unit"],
         "method": result["method"],
         "scale": float(result["scale"]),
@@ -436,19 +440,72 @@ def run_volume_module(cfg):
             "p2": [float(x) for x in p2.tolist()],
             "real_distance_m": float(real_distance)
         },
-        "export_stl": normalize_path(export_stl)
+        "export_stl": normalize_path(export_stl),
+        "summary": {
+            "volume_m3": volume_m3,
+            "volume_liters": volume_liters,
+            "volume_cm3": volume_cm3,
+            "method": result["method"],
+            "scale": float(result["scale"]),
+            "segment_length_m": float(real_distance),
+        }
     }
     if validation:
         result_payload["validation"] = validation
+        result_payload["summary"]["validation_error_percent"] = float(validation["error_percent"])
+        result_payload["summary"]["validation_measured_m"] = float(validation["measured_distance_m"])
 
     result_file = os.path.join(volumes_output, f"volume_{timestamp}.json")
     with open(result_file, "w", encoding="utf-8") as f:
         json.dump(result_payload, f, ensure_ascii=False, indent=2)
 
+    report_file = os.path.join(volumes_output, f"volume_{timestamp}.md")
+    summary = result_payload["summary"]
+    md_lines = [
+        "# Resultado do Cálculo de Volume",
+        "",
+        "## Resumo",
+        f"- Volume: **{summary['volume_m3']:.6f} m³**",
+        f"- Litros: **{summary['volume_liters']:.2f} L**",
+        f"- cm³: **{summary['volume_cm3']:.2f} cm³**",
+        f"- Método: **{summary['method']}**",
+        f"- Escala aplicada: **{summary['scale']:.6f}**",
+        f"- Segmento real: **{summary['segment_length_m']:.4f} m**",
+        "",
+        "## Arquivos",
+        f"- Malha original: `{result_payload['mesh_path']}`",
+        f"- Malha escalada: `{result_payload['export_stl']}`",
+        f"- JSON completo: `{normalize_path(result_file)}`",
+    ]
+    if "validation" in result_payload:
+        v = result_payload["validation"]
+        md_lines += [
+            "",
+            "## Validação",
+            f"- Medido na malha (escalada): **{v['measured_distance_m']:.4f} m**",
+            f"- Real informado: **{v['real_distance_m']:.4f} m**",
+            f"- Erro: **{v['error_percent']:.2f}%**",
+        ]
+    md_lines += [
+        "",
+        "## Detalhes do segmento (escala)",
+        f"- Ponto 1: `{result_payload['segment']['p1']}`",
+        f"- Ponto 2: `{result_payload['segment']['p2']}`",
+    ]
+
+    with open(report_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(md_lines))
+
+    result_payload["report_md"] = normalize_path(report_file)
+
+    summary = result_payload["summary"]
     msg = (
-        f"Volume: {result_payload['volume']:.6f} {result_payload['unit']}\n"
-        f"Método: {result_payload['method']}\n"
-        f"Arquivo: {result_file}"
+        f"Volume: {summary['volume_m3']:.6f} m3\n"
+        f"Litros: {summary['volume_liters']:.2f} L\n"
+        f"Método: {summary['method']}\n"
+        f"Escala: {summary['scale']:.6f}\n"
+        f"Arquivo: {result_file}\n"
+        f"Relatório: {report_file}"
     )
     if validation:
         msg += (
