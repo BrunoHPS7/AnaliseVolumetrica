@@ -1,6 +1,9 @@
 # backend-python/app.py
 import os
 import signal
+import subprocess
+import sys
+import json
 
 from flask import Flask, request, jsonify
 from services import (
@@ -8,6 +11,7 @@ from services import (
     run_calibration_module,
     run_opencv_module,
     run_reconstruction_module,
+    run_volume_module,
     run_full_module,
     )
 
@@ -90,6 +94,66 @@ def execucao_normal():
         }), 500
 
 
+@app.route("/calcular-volume", methods=["POST"])
+def calcular_volume():
+    try:
+        volume_script = os.path.join(BASE_DIR, "bin", "volume_gui.py")
+        if not os.path.exists(volume_script):
+            raise FileNotFoundError("Script de volume não encontrado.")
+
+        proc = subprocess.run(
+            [sys.executable, volume_script],
+            capture_output=True,
+            text=True
+        )
+        if proc.returncode != 0:
+            msg = proc.stderr.strip() or proc.stdout.strip() or "Operação cancelada."
+            return jsonify({
+                "status": "erro",
+                "mensagem": msg
+            }), 400
+
+        raw_out = proc.stdout.strip()
+        if not raw_out:
+            return jsonify({
+                "status": "erro",
+                "mensagem": "Saída vazia do cálculo de volume."
+            }), 500
+
+        try:
+            result = json.loads(raw_out)
+        except json.JSONDecodeError:
+            start = raw_out.rfind("{")
+            end = raw_out.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                try:
+                    result = json.loads(raw_out[start:end + 1])
+                except json.JSONDecodeError:
+                    return jsonify({
+                        "status": "erro",
+                        "mensagem": "Saída inválida do cálculo de volume.",
+                        "detalhes": raw_out[:500]
+                    }), 500
+            else:
+                return jsonify({
+                    "status": "erro",
+                    "mensagem": "Saída inválida do cálculo de volume.",
+                    "detalhes": raw_out[:500]
+                }), 500
+
+        return jsonify({
+            "status": "ok",
+            "mensagem": f"Volume: {result['volume']:.6f} {result['unit']} (método: {result['method']})",
+            "resultado": result
+        })
+
+    except Exception as e:
+        return jsonify({
+            "status": "erro",
+            "mensagem": str(e)
+        }), 500
+
+
 def garantir_pasta(nome):
     caminho = os.path.join(DATA_OUT, nome)
     os.makedirs(caminho, exist_ok=True)
@@ -124,7 +188,7 @@ def historico_frames():
 def historico_volumes():
     return jsonify({
         "status": "ok",
-        "path": garantir_pasta("reconstructions")
+        "path": garantir_pasta("volumes")
     })
 
 

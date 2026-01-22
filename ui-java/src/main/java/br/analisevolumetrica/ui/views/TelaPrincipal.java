@@ -83,6 +83,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
         configurarBotaoOutline(jButtonVideos, corDestaque);
         configurarBotaoOutline(jButtonFrames, corDestaque);
         configurarBotaoOutline(jButtonVolumes, corDestaque);
+        configurarBotaoOutline(jButtonCalcularVolume, corDestaque);
     }
 
     private void configurarBotaoOutline(javax.swing.JButton btn, String corHex) {
@@ -242,6 +243,11 @@ public class TelaPrincipal extends javax.swing.JFrame {
         });
     }
 
+    private javax.swing.ImageIcon loadIcon(String path) {
+        java.net.URL location = getClass().getResource(path);
+        return location == null ? null : new javax.swing.ImageIcon(location);
+    }
+
     /**
      * This method is called from within the constructor to initialize the form.
      * WARNING: Do NOT modify this code. The content of this method is always
@@ -262,6 +268,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
         jLabel8 = new javax.swing.JLabel();
         jLabel9 = new javax.swing.JLabel();
         jLabel12 = new javax.swing.JLabel();
+        jButtonCalcularVolume = new javax.swing.JButton();
         jPanelSobre = new javax.swing.JPanel();
         jLabel10 = new javax.swing.JLabel();
         jLabel11 = new javax.swing.JLabel();
@@ -322,23 +329,23 @@ public class TelaPrincipal extends javax.swing.JFrame {
         jLabel3.setToolTipText("");
 
         jLabel4.setFont(new java.awt.Font("Segoe UI", 0, 16)); // NOI18N
-        jLabel4.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/application.png"))); // NOI18N
+        jLabel4.setIcon(loadIcon("/images/icons/application.png")); // NOI18N
         jLabel4.setText("<html><b>Iniciar:</b> Comece aqui. Carregue um novo arquivo de vídeo para realizar a reconstrução 3D e o cálculo volumétrico.</html>");
 
         jLabel5.setFont(new java.awt.Font("Segoe UI", 0, 16)); // NOI18N
-        jLabel5.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/database.png"))); // NOI18N
+        jLabel5.setIcon(loadIcon("/images/icons/database.png")); // NOI18N
         jLabel5.setText("<html><b>Histórico:</b> Acesse o banco de dados de análises anteriores, visualize resultados salvos e métricas de processamento.</html>");
 
         jLabel6.setFont(new java.awt.Font("Segoe UI", 0, 16)); // NOI18N
-        jLabel6.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/application_xp_terminal.png"))); // NOI18N
+        jLabel6.setIcon(loadIcon("/images/icons/application_xp_terminal.png")); // NOI18N
         jLabel6.setText("<html><b>Tutorial:</b> Dúvidas na captura? Veja o guia passo a passo de como filmar o objeto para obter a melhor precisão.</html>");
 
         jLabel7.setFont(new java.awt.Font("Segoe UI", 0, 16)); // NOI18N
-        jLabel7.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/information.png"))); // NOI18N
+        jLabel7.setIcon(loadIcon("/images/icons/information.png")); // NOI18N
         jLabel7.setText("<html><b>Sobre:</b> Conheça a tecnologia por trás do projeto e a equipe de desenvolvimento.</html>");
 
         jLabel8.setFont(new java.awt.Font("Segoe UI", 0, 16)); // NOI18N
-        jLabel8.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/cross.png"))); // NOI18N
+        jLabel8.setIcon(loadIcon("/images/icons/cross.png")); // NOI18N
         jLabel8.setText("<html><b>Sair:</b> Encerrar o aplicativo.</html>");
 
         jLabel9.setFont(new java.awt.Font("Segoe UI", 0, 18)); // NOI18N
@@ -346,8 +353,16 @@ public class TelaPrincipal extends javax.swing.JFrame {
         jLabel9.setText("<html> <div style=\"text-align: center;\">Para navegar, utilize o menu superior. Aqui está o que você pode fazer: </div> </html>");
 
         jLabel12.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
-        jLabel12.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/money.png"))); // NOI18N
+        jLabel12.setIcon(loadIcon("/images/icons/money.png")); // NOI18N
         jLabel12.setText("AJUDE-NOS: ");
+
+        jButtonCalcularVolume.setFont(new java.awt.Font("Segoe UI", 1, 13)); // NOI18N
+        jButtonCalcularVolume.setText("Calcular volume");
+        jButtonCalcularVolume.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                executarCalculoVolume();
+            }
+        });
 
         javax.swing.GroupLayout jPanelWELCOME2Layout = new javax.swing.GroupLayout(jPanelWELCOME2);
         jPanelWELCOME2.setLayout(jPanelWELCOME2Layout);
@@ -360,6 +375,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
                         .addContainerGap()
                         .addGroup(jPanelWELCOME2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                             .addComponent(jLabel4)
+                            .addComponent(jButtonCalcularVolume, javax.swing.GroupLayout.PREFERRED_SIZE, 180, javax.swing.GroupLayout.PREFERRED_SIZE)
                             .addComponent(jLabel6)
                             .addComponent(jLabel7)
                             .addComponent(jLabel2, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
@@ -385,6 +401,8 @@ public class TelaPrincipal extends javax.swing.JFrame {
                 .addComponent(jLabel9, javax.swing.GroupLayout.PREFERRED_SIZE, 53, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(jLabel4, javax.swing.GroupLayout.PREFERRED_SIZE, 40, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jButtonCalcularVolume, javax.swing.GroupLayout.PREFERRED_SIZE, 32, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(jLabel5, javax.swing.GroupLayout.PREFERRED_SIZE, 40, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
@@ -418,7 +436,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
 
         jLabel15.setFont(new java.awt.Font("Segoe UI", 1, 22)); // NOI18N
         jLabel15.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
-        jLabel15.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/UFOP-removebg-preview (1).png"))); // NOI18N
+        jLabel15.setIcon(loadIcon("/images/icons/UFOP-removebg-preview (1).png")); // NOI18N
         jLabel15.setText("Equipe de desenvolvimento");
 
         jLabel22.setFont(new java.awt.Font("Segoe UI", 0, 18)); // NOI18N
@@ -491,11 +509,11 @@ public class TelaPrincipal extends javax.swing.JFrame {
         jCardCalibracoes.setPreferredSize(new java.awt.Dimension(150, 100));
 
         jLabel18.setFont(new java.awt.Font("Segoe UI", 0, 15)); // NOI18N
-        jLabel18.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/camera.png"))); // NOI18N
+        jLabel18.setIcon(loadIcon("/images/icons/camera.png")); // NOI18N
         jLabel18.setText("Calibrações");
 
         jButtonCalibracoes.setFont(new java.awt.Font("Segoe UI", 0, 15)); // NOI18N
-        jButtonCalibracoes.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/folder.png"))); // NOI18N
+        jButtonCalibracoes.setIcon(loadIcon("/images/icons/folder.png")); // NOI18N
         jButtonCalibracoes.setText("Acessar");
         jButtonCalibracoes.setPreferredSize(new java.awt.Dimension(100, 30));
         jButtonCalibracoes.addActionListener(new java.awt.event.ActionListener() {
@@ -528,11 +546,11 @@ public class TelaPrincipal extends javax.swing.JFrame {
         jCardVideos.setPreferredSize(new java.awt.Dimension(150, 100));
 
         jLabel19.setFont(new java.awt.Font("Segoe UI", 0, 15)); // NOI18N
-        jLabel19.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/film.png"))); // NOI18N
+        jLabel19.setIcon(loadIcon("/images/icons/film.png")); // NOI18N
         jLabel19.setText("Vídeos");
 
         jButtonVideos.setFont(new java.awt.Font("Segoe UI", 0, 15)); // NOI18N
-        jButtonVideos.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/folder.png"))); // NOI18N
+        jButtonVideos.setIcon(loadIcon("/images/icons/folder.png")); // NOI18N
         jButtonVideos.setText("Acessar");
         jButtonVideos.setPreferredSize(new java.awt.Dimension(100, 30));
         jButtonVideos.addActionListener(new java.awt.event.ActionListener() {
@@ -565,11 +583,11 @@ public class TelaPrincipal extends javax.swing.JFrame {
         jCardFrames.setPreferredSize(new java.awt.Dimension(150, 100));
 
         jLabel20.setFont(new java.awt.Font("Segoe UI", 0, 15)); // NOI18N
-        jLabel20.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/photo.png"))); // NOI18N
+        jLabel20.setIcon(loadIcon("/images/icons/photo.png")); // NOI18N
         jLabel20.setText("Frames");
 
         jButtonFrames.setFont(new java.awt.Font("Segoe UI", 0, 15)); // NOI18N
-        jButtonFrames.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/folder.png"))); // NOI18N
+        jButtonFrames.setIcon(loadIcon("/images/icons/folder.png")); // NOI18N
         jButtonFrames.setText("Acessar");
         jButtonFrames.setPreferredSize(new java.awt.Dimension(100, 30));
         jButtonFrames.addActionListener(new java.awt.event.ActionListener() {
@@ -602,11 +620,11 @@ public class TelaPrincipal extends javax.swing.JFrame {
         jCardVolumes.setPreferredSize(new java.awt.Dimension(150, 100));
 
         jLabel21.setFont(new java.awt.Font("Segoe UI", 0, 15)); // NOI18N
-        jLabel21.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/calculator.png"))); // NOI18N
+        jLabel21.setIcon(loadIcon("/images/icons/calculator.png")); // NOI18N
         jLabel21.setText("Volumes");
 
         jButtonVolumes.setFont(new java.awt.Font("Segoe UI", 0, 15)); // NOI18N
-        jButtonVolumes.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/folder.png"))); // NOI18N
+        jButtonVolumes.setIcon(loadIcon("/images/icons/folder.png")); // NOI18N
         jButtonVolumes.setText("Acessar");
         jButtonVolumes.setPreferredSize(new java.awt.Dimension(100, 30));
         jButtonVolumes.addActionListener(new java.awt.event.ActionListener() {
@@ -699,10 +717,10 @@ public class TelaPrincipal extends javax.swing.JFrame {
 
         jPanelWelcome.add(jPanelTutorial, "telaTutorial");
 
-        jMenuIniciar.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/application.png"))); // NOI18N
+        jMenuIniciar.setIcon(loadIcon("/images/icons/application.png")); // NOI18N
         jMenuIniciar.setText("Iniciar");
 
-        jMenuItemWelcome.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/house.png"))); // NOI18N
+        jMenuItemWelcome.setIcon(loadIcon("/images/icons/house.png")); // NOI18N
         jMenuItemWelcome.setText("Menu inicial");
         jMenuItemWelcome.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
@@ -711,7 +729,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
         });
         jMenuIniciar.add(jMenuItemWelcome);
 
-        jMenuItemRunWithout.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/application_go.png"))); // NOI18N
+        jMenuItemRunWithout.setIcon(loadIcon("/images/icons/application_go.png")); // NOI18N
         jMenuItemRunWithout.setText("Execução normal");
         jMenuItemRunWithout.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
@@ -720,7 +738,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
         });
         jMenuIniciar.add(jMenuItemRunWithout);
 
-        jMenuItemRunWith.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/application_view_tile.png"))); // NOI18N
+        jMenuItemRunWith.setIcon(loadIcon("/images/icons/application_view_tile.png")); // NOI18N
         jMenuItemRunWith.setText("Execução com tutorial");
         jMenuIniciar.add(jMenuItemRunWith);
 
@@ -750,7 +768,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
 
         jMenuBar.add(jMenuIniciar);
 
-        jMenuHistorico.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/database.png"))); // NOI18N
+        jMenuHistorico.setIcon(loadIcon("/images/icons/database.png")); // NOI18N
         jMenuHistorico.setText("Histórico");
         jMenuHistorico.addMouseListener(new java.awt.event.MouseAdapter() {
             public void mouseClicked(java.awt.event.MouseEvent evt) {
@@ -759,7 +777,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
         });
         jMenuBar.add(jMenuHistorico);
 
-        jMenuTutorial.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/application_xp_terminal.png"))); // NOI18N
+        jMenuTutorial.setIcon(loadIcon("/images/icons/application_xp_terminal.png")); // NOI18N
         jMenuTutorial.setText("Tutorial");
         jMenuTutorial.addMouseListener(new java.awt.event.MouseAdapter() {
             public void mouseClicked(java.awt.event.MouseEvent evt) {
@@ -768,7 +786,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
         });
         jMenuBar.add(jMenuTutorial);
 
-        jMenuSobre.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/information.png"))); // NOI18N
+        jMenuSobre.setIcon(loadIcon("/images/icons/information.png")); // NOI18N
         jMenuSobre.setText("Sobre");
         jMenuSobre.addMouseListener(new java.awt.event.MouseAdapter() {
             public void mouseClicked(java.awt.event.MouseEvent evt) {
@@ -777,7 +795,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
         });
         jMenuBar.add(jMenuSobre);
 
-        jMenuSair.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/icons/cross.png"))); // NOI18N
+        jMenuSair.setIcon(loadIcon("/images/icons/cross.png")); // NOI18N
         jMenuSair.setText("Sair");
         jMenuSair.addMouseListener(new java.awt.event.MouseAdapter() {
             public void mouseClicked(java.awt.event.MouseEvent evt) {
@@ -885,6 +903,16 @@ public class TelaPrincipal extends javax.swing.JFrame {
             JOptionPane.showMessageDialog(this, "Erro ao executar reconstrução");
         }
     }//GEN-LAST:event_jMenuItemReconstrucaoActionPerformed
+
+    private void executarCalculoVolume() {
+        try {
+            String resposta = PythonClient.calcularVolume();
+            JOptionPane.showMessageDialog(this, resposta);
+            atualizarContadoresHistorico();
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Erro ao calcular volume");
+        }
+    }
 
     private void jMenuItemWelcomeActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItemWelcomeActionPerformed
         // TODO add your handling code here:
@@ -995,6 +1023,7 @@ public class TelaPrincipal extends javax.swing.JFrame {
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JButton jButtonCalibracoes;
+    private javax.swing.JButton jButtonCalcularVolume;
     private javax.swing.JButton jButtonFrames;
     private javax.swing.JButton jButtonVideos;
     private javax.swing.JButton jButtonVolumes;

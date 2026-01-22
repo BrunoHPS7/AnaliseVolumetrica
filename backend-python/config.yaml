@@ -15,6 +15,9 @@ paths:
   colmap_input: "./data/out/frames"
   colmap_output: "./data/out/reconstructions"
   resources: "./resources"
+  
+  # Volumes
+  volumes_output: "./data/out/volumes"
 
 # Parâmetros Técnicos dos Módulos
 parameters:
