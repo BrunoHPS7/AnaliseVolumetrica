@@ -5,15 +5,7 @@ import subprocess
 import sys
 import json
 
-from flask import Flask, request, jsonify
-from services import (
-    load_config,
-    run_calibration_module,
-    run_opencv_module,
-    run_reconstruction_module,
-    run_volume_module,
-    run_full_module,
-    )
+from flask import Flask, jsonify
 
 
 app = Flask(__name__)
@@ -22,16 +14,51 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_OUT = os.path.join(BASE_DIR, "data", "out")
 
 
+def _parse_json_output(raw_out: str):
+    if not raw_out:
+        return None
+    try:
+        return json.loads(raw_out)
+    except json.JSONDecodeError:
+        start = raw_out.rfind("{")
+        end = raw_out.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(raw_out[start:end + 1])
+            except json.JSONDecodeError:
+                return None
+        return None
+
+
+def _run_task(script_path: str, *args: str):
+    if not os.path.exists(script_path):
+        raise FileNotFoundError("Script não encontrado.")
+
+    proc = subprocess.run(
+        [sys.executable, script_path, *args],
+        capture_output=True,
+        text=True
+    )
+
+    if proc.returncode != 0:
+        msg = proc.stderr.strip() or proc.stdout.strip() or "Operação cancelada."
+        return None, msg
+
+    result = _parse_json_output(proc.stdout.strip())
+    if result is None:
+        return None, "Saída inválida do processo."
+    return result, None
+
+
 @app.route("/calibrar-camera", methods=["POST"])
 def calibrar_camera():
     try:
-        cfg = load_config()
-        run_calibration_module(cfg)
+        task_script = os.path.join(BASE_DIR, "bin", "task_runner.py")
+        result, error = _run_task(task_script, "--task", "calibration")
+        if error:
+            return jsonify({"status": "erro", "mensagem": error}), 400
 
-        return jsonify({
-            "status": "ok",
-            "mensagem": "Calibração da câmera executada com sucesso."
-        })
+        return jsonify({"status": "ok", "mensagem": "Calibração da câmera executada com sucesso."})
 
     except Exception as e:
         return jsonify({
@@ -43,13 +70,12 @@ def calibrar_camera():
 @app.route("/extrair-frames", methods=["POST"])
 def extrair_frames():
     try:
-        cfg = load_config()
-        run_opencv_module(cfg)
+        task_script = os.path.join(BASE_DIR, "bin", "task_runner.py")
+        result, error = _run_task(task_script, "--task", "extraction")
+        if error:
+            return jsonify({"status": "erro", "mensagem": error}), 400
 
-        return jsonify({
-            "status": "ok",
-            "mensagem": "Extração de frames executada com sucesso."
-        })
+        return jsonify({"status": "ok", "mensagem": "Extração de frames executada com sucesso."})
 
     except Exception as e:
         return jsonify({
@@ -61,13 +87,12 @@ def extrair_frames():
 @app.route("/reconstruir", methods=["POST"])
 def reconstruir():
     try:
-        cfg = load_config()
-        run_reconstruction_module(cfg)
+        task_script = os.path.join(BASE_DIR, "bin", "task_runner.py")
+        result, error = _run_task(task_script, "--task", "reconstruction")
+        if error:
+            return jsonify({"status": "erro", "mensagem": error}), 400
 
-        return jsonify({
-            "status": "ok",
-            "mensagem": "Reconstrução executada com sucesso."
-        })
+        return jsonify({"status": "ok", "mensagem": "Reconstrução executada com sucesso."})
 
     except Exception as e:
         return jsonify({
@@ -79,13 +104,12 @@ def reconstruir():
 @app.route("/execucao-normal", methods=["POST"])
 def execucao_normal():
     try:
-        cfg = load_config()
-        run_full_module(cfg)
+        task_script = os.path.join(BASE_DIR, "bin", "task_runner.py")
+        result, error = _run_task(task_script, "--task", "full")
+        if error:
+            return jsonify({"status": "erro", "mensagem": error}), 400
 
-        return jsonify({
-            "status": "ok",
-            "mensagem": "Execução total executada com sucesso."
-        })
+        return jsonify({"status": "ok", "mensagem": "Execução total executada com sucesso."})
 
     except Exception as e:
         return jsonify({
@@ -98,48 +122,9 @@ def execucao_normal():
 def calcular_volume():
     try:
         volume_script = os.path.join(BASE_DIR, "bin", "volume_gui.py")
-        if not os.path.exists(volume_script):
-            raise FileNotFoundError("Script de volume não encontrado.")
-
-        proc = subprocess.run(
-            [sys.executable, volume_script],
-            capture_output=True,
-            text=True
-        )
-        if proc.returncode != 0:
-            msg = proc.stderr.strip() or proc.stdout.strip() or "Operação cancelada."
-            return jsonify({
-                "status": "erro",
-                "mensagem": msg
-            }), 400
-
-        raw_out = proc.stdout.strip()
-        if not raw_out:
-            return jsonify({
-                "status": "erro",
-                "mensagem": "Saída vazia do cálculo de volume."
-            }), 500
-
-        try:
-            result = json.loads(raw_out)
-        except json.JSONDecodeError:
-            start = raw_out.rfind("{")
-            end = raw_out.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                try:
-                    result = json.loads(raw_out[start:end + 1])
-                except json.JSONDecodeError:
-                    return jsonify({
-                        "status": "erro",
-                        "mensagem": "Saída inválida do cálculo de volume.",
-                        "detalhes": raw_out[:500]
-                    }), 500
-            else:
-                return jsonify({
-                    "status": "erro",
-                    "mensagem": "Saída inválida do cálculo de volume.",
-                    "detalhes": raw_out[:500]
-                }), 500
+        result, error = _run_task(volume_script)
+        if error:
+            return jsonify({"status": "erro", "mensagem": error}), 400
 
         return jsonify({
             "status": "ok",
