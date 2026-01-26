@@ -4,6 +4,8 @@ numpy
 open3d
 trimesh
 tqdm
+open3d
+tkinter
 
 # Interface / Imagens
 Pillow
