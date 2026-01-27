@@ -5,6 +5,31 @@ import logging
 import re
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, simpledialog
+import open3d as o3d  # Certifique-se de ter instalado: pip install open3d
+
+
+def converter_ply_para_obj(arquivo_ply):
+    if not os.path.exists(arquivo_ply):
+        logging.error(f"Conversão falhou: Arquivo {arquivo_ply} não encontrado.")
+        return
+
+    arquivo_obj = arquivo_ply.replace(".ply", ".obj")
+    logging.info(f"Iniciando conversão de malha: {arquivo_ply} -> {arquivo_obj}")
+
+    try:
+        # Tenta carregar como malha (TriangleMesh)
+        mesh = o3d.io.read_triangle_mesh(arquivo_ply)
+
+        if not mesh.has_triangles():
+            logging.warning("O arquivo .ply não contém triângulos (faces). Salvando como nuvem de pontos no .obj.")
+            pcd = o3d.io.read_point_cloud(arquivo_ply)
+            o3d.io.write_point_cloud(arquivo_obj, pcd)
+        else:
+            o3d.io.write_triangle_mesh(arquivo_obj, mesh)
+
+        logging.info("Conversão para .obj concluída com sucesso.")
+    except Exception as e:
+        logging.error(f"Erro técnico na conversão: {str(e)}")
 
 
 # Log para visuzalição da execução:
@@ -279,7 +304,7 @@ def obter_pasta_reconstrucao(pasta_base_colmap):
 # Pipeline Principal
 def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
     sistema = platform.system()
-    CONFIG = {"threads": 5, "use_gpu": 1, "gpu_index": "0", "max_img_size": 4000}
+    CONFIG = {"threads": 5, "use_gpu": 0, "gpu_index": "0", "max_img_size": 4000}
 
     pasta_frames = selecionar_pasta_frames(frames_root_dir)
     if not pasta_frames:
@@ -318,19 +343,33 @@ def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
     gui = ReconstructProgressWindow(len(steps))
 
     try:
+        # Loop que executa os 7 passos do COLMAP
         for i, (cmd, name) in enumerate(steps, 1):
             gui.update_step(name, i, len(steps))
             run_cmd_gui(cmd, name, gui)
             if i == 3 and not os.path.exists(f"{sparse}/0"):
                 raise Exception("Modelo esparso não gerado. Poucas correspondências.")
 
+
+        caminho_meshed_ply = os.path.join(dense, "meshed.ply")
+
+        # Verifica se o COLMAP realmente criou o arquivo antes de tentar converter
+        if os.path.exists(caminho_meshed_ply):
+            gui.label_step.config(text="Etapa Extra: Convertendo Formatos")
+            gui.label_sub.config(text="Gerando arquivo .OBJ...")
+
+            # Chama a função que definimos lá no topo do arquivo
+            converter_ply_para_obj(caminho_meshed_ply)
+        else:
+            logging.warning("O arquivo meshed.ply não foi encontrado. Pulando conversão para OBJ.")
+
         gui.close()
         print("\n" + "=" * 50 + f"\nSUCESSO! Projeto: {os.path.basename(proj_dir)}\n" + "=" * 50)
 
-        root = tk.Tk();
-        root.withdraw();
+        root = tk.Tk()
+        root.withdraw()
         root.attributes('-topmost', True)
-        messagebox.showinfo("Sucesso", "Reconstrução concluída com sucesso!")
+        messagebox.showinfo("Sucesso", "Reconstrução e conversão concluídas com sucesso!")
         root.destroy()
         return proj_dir
 
