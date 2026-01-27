@@ -307,9 +307,11 @@ def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
     CONFIG = {"threads": 5, "use_gpu": 0, "gpu_index": "0", "max_img_size": 4000}
 
     pasta_frames = selecionar_pasta_frames(frames_root_dir)
-    if not pasta_frames: return
+    if not pasta_frames:
+        return None
     pasta_projeto = obter_pasta_reconstrucao(colmap_root_dir)
-    if not pasta_projeto: return
+    if not pasta_projeto:
+        return None
 
     log_path = configurar_logging(pasta_projeto)
     img_dir = normalize_path(pasta_frames)
@@ -369,7 +371,9 @@ def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
         root.attributes('-topmost', True)
         messagebox.showinfo("Sucesso", "Reconstrução e conversão concluídas com sucesso!")
         root.destroy()
+        return proj_dir
 
     except Exception as e:
         if 'gui' in locals(): gui.close()
         exibir_erro_com_log(f"Falha na etapa: {name}\n{str(e)}", log_path, sistema)
+        return None

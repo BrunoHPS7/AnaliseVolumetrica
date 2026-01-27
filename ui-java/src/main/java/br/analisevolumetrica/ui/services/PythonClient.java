@@ -72,6 +72,10 @@ public class PythonClient {
     public static String execucaoNormal() throws Exception {
         return chamarPost("/execucao-normal");
     }
+
+    public static String calcularVolume() throws Exception {
+        return chamarPost("/calcular-volume");
+    }
     
     public static String historicoCalibracoes() throws Exception {
         return chamarGet("/historico-calibracoes");

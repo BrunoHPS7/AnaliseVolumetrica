@@ -192,6 +192,7 @@
                               <EmptySpace max="-2" attributes="0"/>
                               <Group type="103" groupAlignment="0" attributes="0">
                                   <Component id="jLabel4" alignment="0" max="32767" attributes="0"/>
+                                  <Component id="jButtonCalcularVolume" alignment="0" min="-2" pref="180" max="-2" attributes="0"/>
                                   <Component id="jLabel6" alignment="0" max="32767" attributes="0"/>
                                   <Component id="jLabel7" alignment="0" max="32767" attributes="0"/>
                                   <Component id="jLabel2" alignment="0" max="32767" attributes="0"/>
@@ -223,6 +224,8 @@
                       <Component id="jLabel9" min="-2" pref="53" max="-2" attributes="0"/>
                       <EmptySpace max="-2" attributes="0"/>
                       <Component id="jLabel4" min="-2" pref="40" max="-2" attributes="0"/>
+                      <EmptySpace max="-2" attributes="0"/>
+                      <Component id="jButtonCalcularVolume" min="-2" pref="32" max="-2" attributes="0"/>
                       <EmptySpace max="-2" attributes="0"/>
                       <Component id="jLabel5" min="-2" pref="40" max="-2" attributes="0"/>
                       <EmptySpace max="-2" attributes="0"/>
@@ -327,6 +330,14 @@
                   <Image iconType="3" name="/images/icons/money.png"/>
                 </Property>
                 <Property name="text" type="java.lang.String" value="AJUDE-NOS: "/>
+              </Properties>
+            </Component>
+            <Component class="javax.swing.JButton" name="jButtonCalcularVolume">
+              <Properties>
+                <Property name="font" type="java.awt.Font" editor="org.netbeans.beaninfo.editors.FontEditor">
+                  <Font name="Segoe UI" size="13" style="1"/>
+                </Property>
+                <Property name="text" type="java.lang.String" value="Calcular volume"/>
               </Properties>
             </Component>
           </SubComponents>

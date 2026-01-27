@@ -70,3 +70,37 @@ def selecionar_arquivo_video():
     )
     root.destroy()
     return caminho if caminho else None
+
+
+def selecionar_arquivo_malha(pasta_inicial=None):
+    sistema = platform.system()
+    home = os.path.expanduser("~")
+    titulo = "Seleção de Malha 3D"
+    mensagem = "Selecione o arquivo de malha (.ply, .stl ou .obj)."
+    inicial = pasta_inicial or home
+
+    if sistema == "Linux":
+        try:
+            subprocess.run(["zenity", "--info", "--title=" + titulo, "--text=" + mensagem, "--width=300"], check=False)
+            comando = [
+                "zenity", "--file-selection",
+                "--title=" + titulo,
+                "--file-filter=Malhas | *.ply *.stl *.obj",
+                f"--filename={inicial}/"
+            ]
+            caminho = subprocess.check_output(comando, stderr=subprocess.DEVNULL).decode("utf-8").strip()
+            return caminho if caminho else None
+        except:
+            return None
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    messagebox.showinfo(titulo, mensagem)
+    caminho = filedialog.askopenfilename(
+        initialdir=inicial,
+        title=titulo,
+        filetypes=[("Malhas 3D", "*.ply *.stl *.obj")]
+    )
+    root.destroy()
+    return caminho if caminho else None
