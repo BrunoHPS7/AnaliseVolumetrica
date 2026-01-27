@@ -163,3 +163,47 @@ Opções comuns:
   o3d.visualization.draw_geometries([mesh])
   PY
   ```
+
+---
+
+## Changelog
+
+### 2026-01-27 - Melhoria na precisão do cálculo de volume
+
+**Problema:** Malhas exportadas de softwares como Blender (ex: cubo de 2x2x2) retornavam volume impreciso (8.12 ao invés de 8.0) mesmo com escala correta.
+
+**Causa:** O código exigia `is_watertight=True` para usar o cálculo por tetraedros. Malhas com vértices duplicados eram marcadas como não-watertight e caíam no fallback de voxelização (menos preciso).
+
+**Alterações em `backend-python/src/processing.py`:**
+
+1. **Função `try_make_watertight`** - Refatorada para usar API correta do trimesh:
+   ```python
+   # Antes (erro: funções não existem em trimesh.repair)
+   trimesh.repair.remove_degenerate_faces(mesh)
+   trimesh.repair.remove_duplicate_faces(mesh)
+
+   # Depois (correto)
+   mesh.update_faces(mesh.nondegenerate_faces())
+   mesh.update_faces(mesh.unique_faces())
+   ```
+
+2. **Função `compute_volume`** - Nova lógica de prioridade:
+   ```python
+   # Antes: exigia is_watertight AND is_volume
+   if mesh.is_watertight and mesh.is_volume:
+       return abs(float(mesh.volume)), "mesh"
+
+   # Depois: usa mesh.volume se for válido (finito e positivo)
+   vol = float(mesh.volume)
+   if np.isfinite(vol) and vol > 0:
+       return vol, "mesh"
+   ```
+
+**Ordem de prioridade atual:**
+1. `mesh.volume` direto (mais preciso)
+2. `mesh_repaired.volume` após reparo
+3. Voxelização (fallback, menos preciso)
+
+**Alterações em `requirements.txt`:**
+- Adicionado: `scipy` (dependência do trimesh para algumas operações)
+- Removido: `tkinter` (já vem com Python, não é pacote pip)

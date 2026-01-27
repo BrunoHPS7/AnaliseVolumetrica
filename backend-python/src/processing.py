@@ -92,22 +92,31 @@ def scale_mesh(mesh: trimesh.Trimesh, scale: float) -> trimesh.Trimesh:
 
 def try_make_watertight(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
     mesh = mesh.copy()
-    if hasattr(mesh, "remove_degenerate_faces"):
-        mesh.remove_degenerate_faces()
-    else:
-        trimesh.repair.remove_degenerate_faces(mesh)
 
-    if hasattr(mesh, "remove_duplicate_faces"):
-        mesh.remove_duplicate_faces()
-    elif hasattr(trimesh.repair, "remove_duplicate_faces"):
-        trimesh.repair.remove_duplicate_faces(mesh)
+    # Remove faces degeneradas (área zero)
+    try:
+        mesh.update_faces(mesh.nondegenerate_faces())
+    except Exception:
+        pass
 
-    if hasattr(mesh, "remove_unreferenced_vertices"):
+    # Remove faces duplicadas
+    try:
+        mesh.update_faces(mesh.unique_faces())
+    except Exception:
+        pass
+
+    # Remove vértices não referenciados
+    try:
         mesh.remove_unreferenced_vertices()
-    elif hasattr(trimesh.repair, "remove_unreferenced_vertices"):
-        trimesh.repair.remove_unreferenced_vertices(mesh)
+    except Exception:
+        pass
 
-    trimesh.repair.fill_holes(mesh)
+    # Preenche buracos
+    try:
+        trimesh.repair.fill_holes(mesh)
+    except Exception:
+        pass
+
     return mesh
 
 
@@ -115,13 +124,24 @@ def compute_volume(
     mesh: trimesh.Trimesh,
     voxel_pitch: Optional[float] = None,
 ) -> Tuple[float, str]:
-    if mesh.is_watertight and mesh.is_volume:
-        return abs(float(mesh.volume)), "mesh"
+    # Tenta usar volume direto da malha (mais preciso)
+    try:
+        vol = float(mesh.volume)
+        if np.isfinite(vol) and vol > 0:
+            return vol, "mesh"
+    except Exception:
+        pass
 
+    # Tenta reparar e calcular
     repaired = try_make_watertight(mesh)
-    if repaired.is_watertight and repaired.is_volume:
-        return abs(float(repaired.volume)), "mesh_repaired"
+    try:
+        vol = float(repaired.volume)
+        if np.isfinite(vol) and vol > 0:
+            return vol, "mesh_repaired"
+    except Exception:
+        pass
 
+    # Fallback: voxelização (menos preciso)
     if voxel_pitch is None:
         bbox_max = float(np.max(repaired.extents))
         voxel_pitch = max(bbox_max / 200.0, 1e-6)

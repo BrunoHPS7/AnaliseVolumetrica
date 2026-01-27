@@ -50,3 +50,5 @@ Thumbs.db
 
 # Project docs not tracked
 AGENTS.md
+CLAUDE.md
+.claude/
