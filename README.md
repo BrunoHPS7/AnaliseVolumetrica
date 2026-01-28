@@ -18,9 +18,8 @@ O projeto utiliza um **ambiente virtual (`.venv`)** para gerenciar dependências
 Para preparar o ambiente virtual e instalar dependências:
 
 ```bash
-# Usando o script do projeto
-python3 ./bin/venv_dependencies/setup_venv.py
+# Usando o script do projeto (recomendado Python 3.11)
+python3.11 setup_venv.py
 ```
-## ⚠️ Recomendado: 
+## ⚠️ Recomendado:
 -- **Python 3.9 a 3.11**
-
