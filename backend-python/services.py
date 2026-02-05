@@ -333,6 +333,7 @@ def run_volume_module(cfg):
 
     aruco_result = None
     segment_result = None
+    usar_heightmap = False
 
     usar_aruco = messagebox.askyesno(
         "Escala Automática (ArUco)",
@@ -425,6 +426,13 @@ def run_volume_module(cfg):
             "real_distance_m": float(real_distance),
         }
 
+    usar_heightmap = messagebox.askyesno(
+        "Volume por Altura",
+        "Deseja usar o método de volume por altura?\n"
+        "Recomendado para monte de feijão ou materiais granulares.",
+        parent=root_master
+    )
+
     volumes_output = cfg.get("paths", {}).get("volumes_output", "./data/out/volumes")
     volumes_output = normalize_path(volumes_output)
     os.makedirs(volumes_output, exist_ok=True)
@@ -437,6 +445,8 @@ def run_volume_module(cfg):
             mesh_path=mesh_path,
             scale=aruco_result["scale"],
             output_unit="m3",
+            volume_method="heightmap" if usar_heightmap else "auto",
+            primitive_fit=not usar_heightmap,
             export_stl_path=export_stl
         )
     else:
@@ -447,6 +457,8 @@ def run_volume_module(cfg):
             real_distance=segment_result["real_distance_m"],
             input_unit="m",
             output_unit="m3",
+            volume_method="heightmap" if usar_heightmap else "auto",
+            primitive_fit=not usar_heightmap,
             export_stl_path=export_stl
         )
 
@@ -504,6 +516,7 @@ def run_volume_module(cfg):
         "method": result["method"],
         "scale": float(result["scale"]),
         "scale_source": "aruco" if usar_aruco and aruco_result else "segment",
+        "volume_method": "heightmap" if usar_heightmap else "mesh",
         "export_stl": normalize_path(export_stl),
         "summary": {
             "volume_m3": volume_m3,
@@ -513,6 +526,10 @@ def run_volume_module(cfg):
             "scale": float(result["scale"]),
         }
     }
+    if "heightmap" in result:
+        result_payload["heightmap"] = result["heightmap"]
+    if "primitive_fit" in result:
+        result_payload["primitive_fit"] = result["primitive_fit"]
     if usar_aruco and aruco_result:
         result_payload["aruco"] = {
             "id": int(aruco_result["aruco_id"]),
@@ -553,6 +570,7 @@ def run_volume_module(cfg):
         f"- Método: **{summary['method']}**",
         f"- Escala aplicada: **{summary['scale']:.6f}**",
         f"- Fonte da escala: **{result_payload['scale_source']}**",
+        f"- Método de volume: **{result_payload['volume_method']}**",
         "",
         "## Arquivos",
         f"- Malha original: `{result_payload['mesh_path']}`",
@@ -575,6 +593,22 @@ def run_volume_module(cfg):
             "",
             "## Detalhes do segmento (escala)",
             f"- Segmento real: **{summary['segment_length_m']:.4f} m**",
+        ]
+    if "heightmap" in result_payload:
+        hm = result_payload["heightmap"]
+        md_lines += [
+            "",
+            "## Volume por Altura",
+            f"- Tamanho da célula: **{hm['grid_size']:.6f} m**",
+            f"- Pontos acima do plano: **{hm['points_used']}**",
+        ]
+    if "primitive_fit" in result_payload:
+        pf = result_payload["primitive_fit"]
+        md_lines += [
+            "",
+            "## Forma Regular Detectada",
+            f"- Tipo: **{pf['type']}**",
+            f"- Erro relativo: **{pf['rel_error'] * 100:.2f}%**",
         ]
     if "validation" in result_payload:
         v = result_payload["validation"]

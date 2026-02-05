@@ -285,11 +285,15 @@ reconstructions/
 3. Escolha o método de escala:
    - **ArUco (automático):** informe o tamanho real do lado do marcador (em mm)
    - **Manual:** selecione 2 pontos na janela 3D
-4. (Manual) Na janela 3D:
+4. Escolha o método de volume:
+   - **Malha (padrão):** usa a malha fechada para calcular volume
+   - **Altura (recomendado para monte de feijão):** integra alturas sobre o plano da mesa
+   - **Formas regulares (automático):** se a malha parecer um cubo/cilindro/esfera, o sistema usa volume analítico
+5. (Manual) Na janela 3D:
    - **Shift + Clique** em 2 pontos (distância conhecida)
    - Pressione **Q** para confirmar
-5. (Manual) Digite o comprimento real (em metros)
-6. Veja o resultado!
+6. (Manual) Digite o comprimento real (em metros)
+7. Veja o resultado!
 
 > **Nota:** A escala automática com ArUco exige **cores** na reconstrução. Se a malha não tiver cores, o sistema tentará usar `fused.ply` na mesma pasta.
 
