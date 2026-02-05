@@ -316,6 +316,38 @@ def _pick_segment_points(mesh_path):
     return p1, p2
 
 
+def _choose_volume_mode(parent):
+    choice = {"value": None}
+
+    win = tk.Toplevel(parent)
+    win.title("Tipo de Volume")
+    win.geometry("360x220")
+    win.resizable(False, False)
+    win.transient(parent)
+    win.grab_set()
+
+    label = tk.Label(
+        win,
+        text="Escolha o tipo de volume:",
+        font=("Arial", 12),
+        pady=10,
+    )
+    label.pack()
+
+    def set_choice(value):
+        choice["value"] = value
+        win.destroy()
+
+    tk.Button(win, text="Automático", width=30, command=lambda: set_choice("auto")).pack(pady=4)
+    tk.Button(win, text="Forma regular", width=30, command=lambda: set_choice("regular")).pack(pady=4)
+    tk.Button(win, text="Monte granular (altura)", width=30, command=lambda: set_choice("heightmap")).pack(pady=4)
+    tk.Button(win, text="Objeto irregular (malha)", width=30, command=lambda: set_choice("mesh")).pack(pady=4)
+
+    win.protocol("WM_DELETE_WINDOW", win.destroy)
+    parent.wait_window(win)
+    return choice["value"]
+
+
 def run_volume_module(cfg):
     print("\n=== MÓDULO: VOLUME (MALHA) ===", file=sys.stderr)
 
@@ -333,7 +365,9 @@ def run_volume_module(cfg):
 
     aruco_result = None
     segment_result = None
-    usar_heightmap = False
+    volume_mode = None
+    volume_method = "auto"
+    primitive_fit = True
 
     usar_aruco = messagebox.askyesno(
         "Escala Automática (ArUco)",
@@ -426,12 +460,28 @@ def run_volume_module(cfg):
             "real_distance_m": float(real_distance),
         }
 
-    usar_heightmap = messagebox.askyesno(
-        "Volume por Altura",
-        "Deseja usar o método de volume por altura?\n"
-        "Recomendado para monte de feijão ou materiais granulares.",
-        parent=root_master
-    )
+    choice = _choose_volume_mode(root_master)
+    if choice is None:
+        messagebox.showerror("Erro de Seleção", "Tipo de volume não informado.", parent=root_master)
+        root_master.destroy()
+        return None
+
+    if choice == "auto":
+        volume_mode = "auto"
+        volume_method = "auto"
+        primitive_fit = True
+    elif choice == "regular":
+        volume_mode = "regular"
+        volume_method = "auto"
+        primitive_fit = True
+    elif choice == "heightmap":
+        volume_mode = "heightmap"
+        volume_method = "heightmap"
+        primitive_fit = False
+    else:
+        volume_mode = "mesh"
+        volume_method = "auto"
+        primitive_fit = False
 
     volumes_output = cfg.get("paths", {}).get("volumes_output", "./data/out/volumes")
     volumes_output = normalize_path(volumes_output)
@@ -445,8 +495,8 @@ def run_volume_module(cfg):
             mesh_path=mesh_path,
             scale=aruco_result["scale"],
             output_unit="m3",
-            volume_method="heightmap" if usar_heightmap else "auto",
-            primitive_fit=not usar_heightmap,
+            volume_method=volume_method,
+            primitive_fit=primitive_fit,
             export_stl_path=export_stl
         )
     else:
@@ -457,10 +507,21 @@ def run_volume_module(cfg):
             real_distance=segment_result["real_distance_m"],
             input_unit="m",
             output_unit="m3",
-            volume_method="heightmap" if usar_heightmap else "auto",
-            primitive_fit=not usar_heightmap,
+            volume_method=volume_method,
+            primitive_fit=primitive_fit,
             export_stl_path=export_stl
         )
+
+    if volume_mode == "regular" and not result.get("method", "").startswith("primitive_"):
+        fallback = messagebox.askyesno(
+            "Forma Regular não detectada",
+            "O objeto não se parece com uma forma regular.\n"
+            "Deseja usar o método de malha/voxel?",
+            parent=root_master
+        )
+        if not fallback:
+            root_master.destroy()
+            return None
 
     validation = None
     if messagebox.askyesno(
@@ -516,7 +577,7 @@ def run_volume_module(cfg):
         "method": result["method"],
         "scale": float(result["scale"]),
         "scale_source": "aruco" if usar_aruco and aruco_result else "segment",
-        "volume_method": "heightmap" if usar_heightmap else "mesh",
+        "volume_method": volume_mode or "auto",
         "export_stl": normalize_path(export_stl),
         "summary": {
             "volume_m3": volume_m3,

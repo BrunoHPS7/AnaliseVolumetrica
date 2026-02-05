@@ -285,10 +285,11 @@ reconstructions/
 3. Escolha o método de escala:
    - **ArUco (automático):** informe o tamanho real do lado do marcador (em mm)
    - **Manual:** selecione 2 pontos na janela 3D
-4. Escolha o método de volume:
-   - **Malha (padrão):** usa a malha fechada para calcular volume
-   - **Altura (recomendado para monte de feijão):** integra alturas sobre o plano da mesa
-   - **Formas regulares (automático):** se a malha parecer um cubo/cilindro/esfera, o sistema usa volume analítico
+4. Escolha o tipo de volume:
+   - **Automático:** tenta forma regular e, se não encaixar, usa malha/voxel
+   - **Forma regular:** usa volume analítico (cubo/cilindro/esfera) quando o ajuste é bom
+   - **Monte granular (altura):** integra alturas sobre o plano da mesa
+   - **Objeto irregular (malha):** usa malha/voxel direto
 5. (Manual) Na janela 3D:
    - **Shift + Clique** em 2 pontos (distância conhecida)
    - Pressione **Q** para confirmar
