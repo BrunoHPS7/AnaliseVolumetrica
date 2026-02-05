@@ -1,8 +1,13 @@
 package br.analisevolumetrica.ui.views;
 
 import br.analisevolumetrica.ui.services.PythonClient;
+import br.analisevolumetrica.ui.utils.DesignConstants;
+import br.analisevolumetrica.ui.components.ModernComponents;
+import br.analisevolumetrica.ui.components.ToastNotification;
+import br.analisevolumetrica.ui.components.ProgressDialog;
 import java.awt.CardLayout;
 import javax.swing.JOptionPane;
+import javax.swing.Timer;
 import com.formdev.flatlaf.themes.FlatMacLightLaf;
 import java.awt.Cursor;
 import java.io.File;
@@ -12,7 +17,13 @@ import java.awt.event.MouseEvent;
 import java.util.concurrent.Callable;
 import javax.swing.JButton;
 import javax.swing.JPanel;
+import javax.swing.SwingWorker;
 import org.json.JSONObject;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.border.EmptyBorder;
 
 /**
  *
@@ -20,18 +31,290 @@ import org.json.JSONObject;
  */
 public class TelaPrincipal extends javax.swing.JFrame {
 
+    private JPanel statusPanel; // Painel de status de conexão
+    private boolean backendConnected = false;
+
     public TelaPrincipal() {
         initComponents();
+        criarTelaInicialModerna();
         estilizarCardsHistorico();
         estilizarBotoesHistorico();
         atualizarContadoresHistorico();
         configurarInteracaoCards();
         configurarLinkGitHub();
-        
+        verificarConexaoBackend();
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             System.out.println("Encerrando aplicação... Enviando sinal para o Python.");
             PythonClient.encerrarServidor();
         }));
+    }
+
+    /**
+     * Cria a nova tela inicial moderna com fluxo passo a passo
+     */
+    private void criarTelaInicialModerna() {
+        // Limpar o painel antigo
+        jPanelWELCOME2.removeAll();
+        jPanelWELCOME2.setLayout(new BorderLayout());
+        jPanelWELCOME2.setBackground(DesignConstants.BACKGROUND);
+
+        // Container principal
+        JPanel mainContainer = new JPanel();
+        mainContainer.setLayout(new BoxLayout(mainContainer, BoxLayout.Y_AXIS));
+        mainContainer.setOpaque(false);
+        mainContainer.setBorder(new EmptyBorder(
+            DesignConstants.SPACING_XLARGE,
+            DesignConstants.SPACING_XLARGE,
+            DesignConstants.SPACING_XLARGE,
+            DesignConstants.SPACING_XLARGE
+        ));
+
+        // Título principal
+        JPanel titlePanel = new JPanel();
+        titlePanel.setLayout(new BoxLayout(titlePanel, BoxLayout.Y_AXIS));
+        titlePanel.setOpaque(false);
+
+        javax.swing.JLabel titleLabel = ModernComponents.createSectionTitle("Análise Volumétrica 3D");
+        titleLabel.setAlignmentX(javax.swing.JLabel.CENTER_ALIGNMENT);
+
+        javax.swing.JLabel subtitleLabel = ModernComponents.createSectionSubtitle(
+            "Siga os passos abaixo para processar seu vídeo e calcular o volume"
+        );
+        subtitleLabel.setAlignmentX(javax.swing.JLabel.CENTER_ALIGNMENT);
+
+        titlePanel.add(titleLabel);
+        titlePanel.add(Box.createVerticalStrut(DesignConstants.SPACING_SMALL));
+        titlePanel.add(subtitleLabel);
+
+        // Container dos passos
+        JPanel stepsContainer = new JPanel();
+        stepsContainer.setLayout(new BoxLayout(stepsContainer, BoxLayout.Y_AXIS));
+        stepsContainer.setOpaque(false);
+        stepsContainer.setBorder(new EmptyBorder(
+            DesignConstants.SPACING_LARGE,
+            0,
+            DesignConstants.SPACING_LARGE,
+            0
+        ));
+
+        // Passo 1: Extrair Frames
+        JPanel step1 = ModernComponents.createStepCard(
+            1,
+            "🎬",
+            "Extrair Frames",
+            "Extrair frames do vídeo para análise",
+            "EXTRAIR →",
+            DesignConstants.CATEGORY_VIDEO,
+            this::executarExtracao
+        );
+        step1.setAlignmentX(JPanel.CENTER_ALIGNMENT);
+
+        // Passo 2: Calibrar Câmera
+        JPanel step2 = ModernComponents.createStepCard(
+            2,
+            "📷",
+            "Calibrar Câmera",
+            "Calibrar câmera para precisão nas medições",
+            "CALIBRAR →",
+            DesignConstants.CATEGORY_CALIBRATION,
+            this::executarCalibracao
+        );
+        step2.setAlignmentX(JPanel.CENTER_ALIGNMENT);
+
+        // Passo 3: Reconstruir 3D
+        JPanel step3 = ModernComponents.createStepCard(
+            3,
+            "🔷",
+            "Reconstruir 3D",
+            "Gerar malha 3D usando COLMAP e MVS",
+            "RECONSTRUIR →",
+            DesignConstants.CATEGORY_RECONSTRUCTION,
+            this::executarReconstrucao
+        );
+        step3.setAlignmentX(JPanel.CENTER_ALIGNMENT);
+
+        // Passo 4: Calcular Volume
+        JPanel step4 = ModernComponents.createStepCard(
+            4,
+            "📊",
+            "Calcular Volume",
+            "Calcular volume final do objeto em m³",
+            "CALCULAR →",
+            DesignConstants.CATEGORY_VOLUME,
+            this::executarCalculoVolume
+        );
+        step4.setAlignmentX(JPanel.CENTER_ALIGNMENT);
+
+        stepsContainer.add(step1);
+        stepsContainer.add(Box.createVerticalStrut(DesignConstants.SPACING_MEDIUM));
+        stepsContainer.add(step2);
+        stepsContainer.add(Box.createVerticalStrut(DesignConstants.SPACING_MEDIUM));
+        stepsContainer.add(step3);
+        stepsContainer.add(Box.createVerticalStrut(DesignConstants.SPACING_MEDIUM));
+        stepsContainer.add(step4);
+
+        // Painel de status
+        statusPanel = ModernComponents.createStatusIndicator(
+            "Conectado ao backend (localhost:5000)",
+            true
+        );
+        statusPanel.setAlignmentX(javax.swing.JLabel.CENTER_ALIGNMENT);
+
+        // Montar tudo
+        mainContainer.add(titlePanel);
+        mainContainer.add(Box.createVerticalStrut(DesignConstants.SPACING_LARGE));
+        mainContainer.add(stepsContainer);
+        mainContainer.add(Box.createVerticalGlue());
+        mainContainer.add(statusPanel);
+
+        jPanelWELCOME2.add(mainContainer, BorderLayout.CENTER);
+        jPanelWELCOME2.revalidate();
+        jPanelWELCOME2.repaint();
+    }
+
+    /**
+     * Verifica conexão com o backend
+     */
+    private void verificarConexaoBackend() {
+        new Thread(() -> {
+            try {
+                String resposta = PythonClient.historicoVolumes();
+                backendConnected = (resposta != null && !resposta.isEmpty());
+            } catch (Exception e) {
+                backendConnected = false;
+            }
+
+            javax.swing.SwingUtilities.invokeLater(() -> {
+                statusPanel.removeAll();
+                JPanel newStatus = ModernComponents.createStatusIndicator(
+                    backendConnected
+                        ? "Conectado ao backend (localhost:5000)"
+                        : "Backend desconectado",
+                    backendConnected
+                );
+                statusPanel.add(newStatus);
+                statusPanel.revalidate();
+                statusPanel.repaint();
+            });
+        }).start();
+    }
+
+    /**
+     * Mostra tela de histórico
+     */
+    private void mostrarHistorico() {
+        CardLayout cl = (CardLayout) jPanelWelcome.getLayout();
+        cl.show(jPanelWelcome, "telaHistorico");
+    }
+
+    /**
+     * Mostra tela sobre
+     */
+    private void mostrarSobre() {
+        CardLayout cl = (CardLayout) jPanelWelcome.getLayout();
+        cl.show(jPanelWelcome, "telaSobre");
+    }
+
+    /**
+     * Executa execução normal (pipeline completo)
+     */
+    private void executarExecucaoNormal() {
+        executarOperacaoComProgress(
+                "Pipeline Completo",
+                "Executando análise volumétrica completa...",
+                () -> PythonClient.execucaoNormal(),
+                "Pipeline executado com sucesso!",
+                "Erro ao executar pipeline"
+        );
+    }
+
+    /**
+     * Executa extração de frames (chamado pelo step card)
+     */
+    private void executarExtracao() {
+        jMenuItemExtracaoActionPerformed(null);
+    }
+
+    /**
+     * Executa calibração da câmera (chamado pelo step card)
+     */
+    private void executarCalibracao() {
+        jMenuItemCalibracaoActionPerformed(null);
+    }
+
+    /**
+     * Executa reconstrução 3D (chamado pelo step card)
+     */
+    private void executarReconstrucao() {
+        jMenuItemReconstrucaoActionPerformed(null);
+    }
+
+    /**
+     * Executa operação com progress dialog e notificações toast
+     */
+    private void executarOperacaoComProgress(
+            String titulo,
+            String statusInicial,
+            Callable<String> operacao,
+            String mensagemSucesso,
+            String mensagemErro
+    ) {
+        ProgressDialog progress = ProgressDialog.create(this, titulo, statusInicial);
+        progress.setIndeterminate(true);
+
+        SwingWorker<String, Void> worker = new SwingWorker<>() {
+            @Override
+            protected String doInBackground() throws Exception {
+                progress.appendLog("Conectando ao backend...");
+                return operacao.call();
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    String resultado = get();
+                    progress.setCompleted(true);
+                    progress.appendLog("✅ Operação concluída");
+                    progress.appendLog("Resposta: " + resultado);
+
+                    // Fechar progress após 2 segundos
+                    Timer closeTimer = new Timer(2000, e -> {
+                        progress.dispose();
+                        // Mostrar toast de sucesso
+                        ToastNotification.showSuccess(
+                                TelaPrincipal.this,
+                                "Sucesso",
+                                mensagemSucesso
+                        );
+                        // Atualizar histórico automaticamente
+                        atualizarContadoresHistorico();
+                    });
+                    closeTimer.setRepeats(false);
+                    closeTimer.start();
+
+                } catch (Exception e) {
+                    progress.setCompleted(false);
+                    progress.appendLog("❌ Erro: " + e.getMessage());
+
+                    // Fechar progress após 3 segundos
+                    Timer errorTimer = new Timer(3000, evt -> {
+                        progress.dispose();
+                        // Mostrar toast de erro
+                        ToastNotification.showError(
+                                TelaPrincipal.this,
+                                "Erro",
+                                mensagemErro + ": " + e.getMessage()
+                        );
+                    });
+                    errorTimer.setRepeats(false);
+                    errorTimer.start();
+                }
+            }
+        };
+
+        progress.showNonBlocking();
+        worker.execute();
     }
     
     private void configurarInteracaoCards() {
@@ -297,15 +580,11 @@ public class TelaPrincipal extends javax.swing.JFrame {
         jMenuBar = new javax.swing.JMenuBar();
         jMenuIniciar = new javax.swing.JMenu();
         jMenuItemWelcome = new javax.swing.JMenuItem();
-        jMenuItemRunWithout = new javax.swing.JMenuItem();
-        jMenuItemRunWith = new javax.swing.JMenuItem();
         jMenuItemCalibracao = new javax.swing.JMenuItem();
         jMenuItemExtracao = new javax.swing.JMenuItem();
         jMenuItemReconstrucao = new javax.swing.JMenuItem();
         jMenuHistorico = new javax.swing.JMenu();
-        jMenuTutorial = new javax.swing.JMenu();
         jMenuSobre = new javax.swing.JMenu();
-        jMenuSair = new javax.swing.JMenu();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
         setMaximumSize(new java.awt.Dimension(1920, 1080));
@@ -717,11 +996,12 @@ public class TelaPrincipal extends javax.swing.JFrame {
 
         jPanelWelcome.add(jPanelTutorial, "telaTutorial");
 
+        // Menu simplificado - apenas itens essenciais
         jMenuIniciar.setIcon(loadIcon("/images/icons/application.png")); // NOI18N
-        jMenuIniciar.setText("Iniciar");
+        jMenuIniciar.setText("Arquivo");
 
         jMenuItemWelcome.setIcon(loadIcon("/images/icons/house.png")); // NOI18N
-        jMenuItemWelcome.setText("Menu inicial");
+        jMenuItemWelcome.setText("Início");
         jMenuItemWelcome.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jMenuItemWelcomeActionPerformed(evt);
@@ -729,18 +1009,8 @@ public class TelaPrincipal extends javax.swing.JFrame {
         });
         jMenuIniciar.add(jMenuItemWelcome);
 
-        jMenuItemRunWithout.setIcon(loadIcon("/images/icons/application_go.png")); // NOI18N
-        jMenuItemRunWithout.setText("Execução normal");
-        jMenuItemRunWithout.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jMenuItemRunWithoutActionPerformed(evt);
-            }
-        });
-        jMenuIniciar.add(jMenuItemRunWithout);
-
-        jMenuItemRunWith.setIcon(loadIcon("/images/icons/application_view_tile.png")); // NOI18N
-        jMenuItemRunWith.setText("Execução com tutorial");
-        jMenuIniciar.add(jMenuItemRunWith);
+        // Separator
+        jMenuIniciar.addSeparator();
 
         jMenuItemCalibracao.setText("Calibração da câmera");
         jMenuItemCalibracao.addActionListener(new java.awt.event.ActionListener() {
@@ -758,13 +1028,23 @@ public class TelaPrincipal extends javax.swing.JFrame {
         });
         jMenuIniciar.add(jMenuItemExtracao);
 
-        jMenuItemReconstrucao.setText("Reconstrução da cena");
+        jMenuItemReconstrucao.setText("Reconstrução 3D");
         jMenuItemReconstrucao.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jMenuItemReconstrucaoActionPerformed(evt);
             }
         });
         jMenuIniciar.add(jMenuItemReconstrucao);
+
+        // Separator
+        jMenuIniciar.addSeparator();
+
+        // Item de sair movido para o menu Arquivo
+        javax.swing.JMenuItem jMenuItemSair = new javax.swing.JMenuItem();
+        jMenuItemSair.setIcon(loadIcon("/images/icons/cross.png"));
+        jMenuItemSair.setText("Sair");
+        jMenuItemSair.addActionListener(e -> sairAplicacao());
+        jMenuIniciar.add(jMenuItemSair);
 
         jMenuBar.add(jMenuIniciar);
 
@@ -777,15 +1057,6 @@ public class TelaPrincipal extends javax.swing.JFrame {
         });
         jMenuBar.add(jMenuHistorico);
 
-        jMenuTutorial.setIcon(loadIcon("/images/icons/application_xp_terminal.png")); // NOI18N
-        jMenuTutorial.setText("Tutorial");
-        jMenuTutorial.addMouseListener(new java.awt.event.MouseAdapter() {
-            public void mouseClicked(java.awt.event.MouseEvent evt) {
-                jMenuTutorialMouseClicked(evt);
-            }
-        });
-        jMenuBar.add(jMenuTutorial);
-
         jMenuSobre.setIcon(loadIcon("/images/icons/information.png")); // NOI18N
         jMenuSobre.setText("Sobre");
         jMenuSobre.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -794,15 +1065,6 @@ public class TelaPrincipal extends javax.swing.JFrame {
             }
         });
         jMenuBar.add(jMenuSobre);
-
-        jMenuSair.setIcon(loadIcon("/images/icons/cross.png")); // NOI18N
-        jMenuSair.setText("Sair");
-        jMenuSair.addMouseListener(new java.awt.event.MouseAdapter() {
-            public void mouseClicked(java.awt.event.MouseEvent evt) {
-                jMenuSairMouseClicked(evt);
-            }
-        });
-        jMenuBar.add(jMenuSair);
 
         setJMenuBar(jMenuBar);
 
@@ -821,37 +1083,27 @@ public class TelaPrincipal extends javax.swing.JFrame {
         setLocationRelativeTo(null);
     }// </editor-fold>//GEN-END:initComponents
     
-    private void jMenuTutorialMouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jMenuTutorialMouseClicked
-        // TODO add your handling code here:
-        CardLayout cl = (CardLayout) jPanelWelcome.getLayout();
-        cl.show(jPanelWelcome, "telaTutorial");
-        
-        jMenuTutorial.setSelected(false);
-        jPanelWelcome.requestFocusInWindow();
-    }//GEN-LAST:event_jMenuTutorialMouseClicked
-
-    private void jMenuSairMouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jMenuSairMouseClicked
-        // TODO add your handling code here:
-        jMenuSair.setSelected(false);
-        jPanelWelcome.requestFocusInWindow();
-        
+    /**
+     * Sai da aplicação com confirmação
+     */
+    private void sairAplicacao() {
         Object[] opcoes = {"Sim", "Cancelar"};
-        
+
         int opcao = JOptionPane.showOptionDialog(
-                this, 
-                "Deseja sair do sistema?", 
-                "Confirmação", 
-                JOptionPane.DEFAULT_OPTION, 
-                JOptionPane.WARNING_MESSAGE, 
+                this,
+                "Deseja sair do sistema?",
+                "Confirmação",
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.WARNING_MESSAGE,
                 null,
-                opcoes, 
+                opcoes,
                 opcoes[1]
         );
-        
+
         if (opcao == 0) {
             System.exit(0);
         }
-    }//GEN-LAST:event_jMenuSairMouseClicked
+    }
 
     private void jMenuSobreMouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jMenuSobreMouseClicked
         // TODO add your handling code here:
@@ -872,46 +1124,43 @@ public class TelaPrincipal extends javax.swing.JFrame {
     }//GEN-LAST:event_jMenuHistoricoMouseClicked
 
     private void jMenuItemCalibracaoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItemCalibracaoActionPerformed
-        // TODO add your handling code here:
-        try {
-            String resposta = PythonClient.calibrarCamera();
-            JOptionPane.showMessageDialog(this, resposta);
-            atualizarContadoresHistorico();
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Erro ao executar calibração");
-        }
+        executarOperacaoComProgress(
+                "Calibração da Câmera",
+                "Executando calibração da câmera...",
+                () -> PythonClient.calibrarCamera(),
+                "Calibração concluída com sucesso!",
+                "Erro ao executar calibração"
+        );
     }//GEN-LAST:event_jMenuItemCalibracaoActionPerformed
 
     private void jMenuItemExtracaoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItemExtracaoActionPerformed
-        // TODO add your handling code here:
-        try {
-            String resposta = PythonClient.extrairFrames();
-            JOptionPane.showMessageDialog(this, resposta);
-            atualizarContadoresHistorico();
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Erro ao executar extração");
-        }
+        executarOperacaoComProgress(
+                "Extração de Frames",
+                "Extraindo frames do vídeo...",
+                () -> PythonClient.extrairFrames(),
+                "Frames extraídos com sucesso!",
+                "Erro ao extrair frames"
+        );
     }//GEN-LAST:event_jMenuItemExtracaoActionPerformed
 
     private void jMenuItemReconstrucaoActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItemReconstrucaoActionPerformed
-        // TODO add your handling code here:
-        try {
-            String resposta = PythonClient.reconstruir();
-            JOptionPane.showMessageDialog(this, resposta);
-            atualizarContadoresHistorico();
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Erro ao executar reconstrução");
-        }
+        executarOperacaoComProgress(
+                "Reconstrução 3D",
+                "Executando reconstrução 3D com COLMAP...",
+                () -> PythonClient.reconstruir(),
+                "Reconstrução 3D concluída com sucesso!",
+                "Erro ao executar reconstrução"
+        );
     }//GEN-LAST:event_jMenuItemReconstrucaoActionPerformed
 
     private void executarCalculoVolume() {
-        try {
-            String resposta = PythonClient.calcularVolume();
-            JOptionPane.showMessageDialog(this, resposta);
-            atualizarContadoresHistorico();
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Erro ao calcular volume");
-        }
+        executarOperacaoComProgress(
+                "Cálculo de Volume",
+                "Abrindo interface de cálculo...",
+                () -> PythonClient.calcularVolume(),
+                "Volume calculado com sucesso!",
+                "Erro ao calcular volume"
+        );
     }
 
     private void jMenuItemWelcomeActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItemWelcomeActionPerformed
@@ -926,6 +1175,11 @@ public class TelaPrincipal extends javax.swing.JFrame {
 
             if (!dir.exists()) {
                 dir.mkdirs();
+                ToastNotification.showInfo(
+                        this,
+                        "Pasta Criada",
+                        "Pasta criada: " + dir.getName()
+                );
             }
 
             if (!Desktop.isDesktopSupported()) {
@@ -935,11 +1189,10 @@ public class TelaPrincipal extends javax.swing.JFrame {
             Desktop.getDesktop().open(dir);
 
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(
-                this,
-                "Erro ao abrir pasta:\n" + e.getMessage(),
-                "Erro",
-                JOptionPane.ERROR_MESSAGE
+            ToastNotification.showError(
+                    this,
+                    "Erro",
+                    "Erro ao abrir pasta: " + e.getMessage()
             );
             e.printStackTrace();
         }
@@ -958,12 +1211,18 @@ public class TelaPrincipal extends javax.swing.JFrame {
             abrirPasta(path);
             System.out.println("Path recebido: " + path);
 
+            // Mostrar notificação de sucesso
+            ToastNotification.showInfo(
+                    this,
+                    "Pasta Aberta",
+                    "Histórico aberto no explorador de arquivos"
+            );
+
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(
-                this,
-                "Erro ao abrir histórico:\n" + e.getMessage(),
-                "Erro",
-                JOptionPane.ERROR_MESSAGE
+            ToastNotification.showError(
+                    this,
+                    "Erro",
+                    "Erro ao abrir histórico: " + e.getMessage()
             );
             e.printStackTrace();
         }
@@ -988,17 +1247,6 @@ public class TelaPrincipal extends javax.swing.JFrame {
         // TODO add your handling code here:
         abrirHistorico(PythonClient::historicoVolumes);
     }//GEN-LAST:event_jButtonVolumesActionPerformed
-
-    private void jMenuItemRunWithoutActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItemRunWithoutActionPerformed
-        // TODO add your handling code here:
-        try {
-            String resposta = PythonClient.execucaoNormal();
-            JOptionPane.showMessageDialog(this, resposta);
-            atualizarContadoresHistorico();
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Erro ao executar o programa");
-        }
-    }//GEN-LAST:event_jMenuItemRunWithoutActionPerformed
 
     /**
      * @param args the command line arguments
@@ -1060,12 +1308,8 @@ public class TelaPrincipal extends javax.swing.JFrame {
     private javax.swing.JMenuItem jMenuItemCalibracao;
     private javax.swing.JMenuItem jMenuItemExtracao;
     private javax.swing.JMenuItem jMenuItemReconstrucao;
-    private javax.swing.JMenuItem jMenuItemRunWith;
-    private javax.swing.JMenuItem jMenuItemRunWithout;
     private javax.swing.JMenuItem jMenuItemWelcome;
-    private javax.swing.JMenu jMenuSair;
     private javax.swing.JMenu jMenuSobre;
-    private javax.swing.JMenu jMenuTutorial;
     private javax.swing.JPanel jPanelHistorico;
     private javax.swing.JPanel jPanelSobre;
     private javax.swing.JPanel jPanelTutorial;
