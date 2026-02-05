@@ -1,7 +1,9 @@
-from typing import Optional, Tuple, Dict, Union
+from typing import Optional, Tuple, Dict, Union, List
+import os
 import numpy as np
 import trimesh
 import open3d as o3d
+import cv2
 
 """
 Módulo: processing
@@ -193,3 +195,245 @@ def compute_volume_from_mesh(
         "method": method,
         "scale": scale,
     }
+
+
+def _get_aruco_dictionary(name: str):
+    if not hasattr(cv2, "aruco"):
+        raise RuntimeError("OpenCV foi instalado sem o módulo aruco (opencv-contrib).")
+    if not name.startswith("DICT_"):
+        name = f"DICT_{name}"
+    if not hasattr(cv2.aruco, name):
+        raise ValueError(f"Dicionário ArUco inválido: {name}")
+    return cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, name))
+
+
+def _detect_markers(gray: np.ndarray, dictionary):
+    if hasattr(cv2.aruco, "ArucoDetector"):
+        params = cv2.aruco.DetectorParameters()
+        detector = cv2.aruco.ArucoDetector(dictionary, params)
+        return detector.detectMarkers(gray)
+    params = cv2.aruco.DetectorParameters_create()
+    return cv2.aruco.detectMarkers(gray, dictionary, parameters=params)
+
+
+def _point_cloud_from_mesh(mesh_path: str) -> Optional[o3d.geometry.PointCloud]:
+    mesh = o3d.io.read_triangle_mesh(mesh_path, enable_post_processing=True)
+    if mesh.is_empty():
+        return None
+    if len(mesh.vertex_colors) == 0:
+        return None
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = mesh.vertices
+    pcd.colors = mesh.vertex_colors
+    return pcd
+
+
+def _load_colored_point_cloud(mesh_path: str) -> Tuple[o3d.geometry.PointCloud, str]:
+    pcd = _point_cloud_from_mesh(mesh_path)
+    if pcd is not None and not pcd.is_empty() and pcd.has_colors():
+        return pcd, mesh_path
+
+    pcd = o3d.io.read_point_cloud(mesh_path)
+    if not pcd.is_empty() and pcd.has_colors():
+        return pcd, mesh_path
+
+    candidate = os.path.join(os.path.dirname(mesh_path), "fused.ply")
+    if os.path.exists(candidate):
+        pcd = o3d.io.read_point_cloud(candidate)
+        if not pcd.is_empty() and pcd.has_colors():
+            return pcd, candidate
+
+    raise ValueError(
+        "Não foi possível obter cores para detectar o ArUco. "
+        "Use uma malha .ply com cores ou garanta que exista fused.ply na pasta."
+    )
+
+
+def _plane_basis(plane_model: List[float]):
+    normal = np.array(plane_model[:3], dtype=float)
+    norm = float(np.linalg.norm(normal))
+    if norm == 0:
+        raise ValueError("Plano inválido para projeção.")
+    n = normal / norm
+    d = float(plane_model[3]) / norm
+    p0 = -d * n
+    helper = np.array([1.0, 0.0, 0.0], dtype=float)
+    if abs(np.dot(helper, n)) > 0.9:
+        helper = np.array([0.0, 1.0, 0.0], dtype=float)
+    u = np.cross(n, helper)
+    u_norm = float(np.linalg.norm(u))
+    if u_norm == 0:
+        raise ValueError("Plano inválido para projeção.")
+    u /= u_norm
+    v = np.cross(n, u)
+    return p0, u, v
+
+
+def _rasterize_plane_points(
+    points: np.ndarray,
+    colors: np.ndarray,
+    p0: np.ndarray,
+    u: np.ndarray,
+    v: np.ndarray,
+    min_dim_px: int = 400,
+    max_dim_px: int = 1600,
+) -> Tuple[np.ndarray, float, float, float, float]:
+    vectors = points - p0
+    coords = np.column_stack((vectors @ u, vectors @ v))
+    min_xy = coords.min(axis=0)
+    max_xy = coords.max(axis=0)
+    extent = max_xy - min_xy
+    if extent[0] <= 0 or extent[1] <= 0:
+        raise ValueError("Projeção inválida do plano.")
+    area = float(extent[0] * extent[1])
+    spacing = np.sqrt(area / max(len(coords), 1))
+    pixel_size = max(spacing / 1.5, 1e-6)
+
+    width = int(extent[0] / pixel_size) + 1
+    height = int(extent[1] / pixel_size) + 1
+    max_dim = max(width, height)
+    if max_dim > max_dim_px:
+        pixel_size *= max_dim / max_dim_px
+    elif max_dim < min_dim_px:
+        pixel_size *= max_dim / min_dim_px
+
+    width = int(extent[0] / pixel_size) + 1
+    height = int(extent[1] / pixel_size) + 1
+
+    px = np.floor((coords[:, 0] - min_xy[0]) / pixel_size).astype(int)
+    py = np.floor((coords[:, 1] - min_xy[1]) / pixel_size).astype(int)
+    mask = (px >= 0) & (px < width) & (py >= 0) & (py < height)
+    px = px[mask]
+    py = py[mask]
+    col = colors[mask]
+
+    if col.max() > 1.0:
+        col = col / 255.0
+
+    img_sum = np.zeros((height, width, 3), dtype=np.float32)
+    img_count = np.zeros((height, width), dtype=np.int32)
+    np.add.at(img_sum, (py, px), col)
+    np.add.at(img_count, (py, px), 1)
+
+    img = np.ones((height, width, 3), dtype=np.float32)
+    filled = img_count > 0
+    img[filled] = img_sum[filled] / img_count[filled][:, None]
+    img_uint8 = (img * 255.0).clip(0, 255).astype(np.uint8)
+    return img_uint8, float(min_xy[0]), float(min_xy[1]), float(pixel_size), float(pixel_size)
+
+
+def compute_aruco_scale_from_point_cloud(
+    pcd: o3d.geometry.PointCloud,
+    real_marker_size: float,
+    input_unit: str = "cm",
+    aruco_dict: Union[str, List[str]] = "DICT_4X4_50",
+    aruco_id: Optional[int] = 0,
+    max_planes: int = 4,
+) -> Dict[str, Union[float, int, str, List[List[float]]]]:
+    if real_marker_size is None or real_marker_size <= 0:
+        raise ValueError("real_marker_size deve ser > 0.")
+    if pcd.is_empty():
+        raise ValueError("Nuvem de pontos vazia.")
+    if not pcd.has_colors():
+        raise ValueError("Nuvem de pontos sem cores.")
+
+    unit_scale = {"m": 1.0, "cm": 0.01, "mm": 0.001}
+    if input_unit not in unit_scale:
+        raise ValueError("input_unit inválido (use m, cm ou mm).")
+    real_marker_size_m = real_marker_size * unit_scale[input_unit]
+
+    pcd_work = pcd
+    bbox = pcd.get_axis_aligned_bounding_box()
+    diag = float(np.linalg.norm(bbox.get_extent()))
+    if len(pcd.points) > 400_000:
+        voxel_size = max(diag / 500.0, 1e-6)
+        pcd_work = pcd.voxel_down_sample(voxel_size)
+
+    dict_list = aruco_dict if isinstance(aruco_dict, (list, tuple)) else [aruco_dict]
+
+    for dict_name in dict_list:
+        dictionary = _get_aruco_dictionary(dict_name)
+
+        for _ in range(max_planes):
+            if len(pcd_work.points) < 1000:
+                break
+            plane_model, inliers = pcd_work.segment_plane(
+                distance_threshold=max(diag * 0.002, 1e-6),
+                ransac_n=3,
+                num_iterations=1000,
+            )
+            if len(inliers) < 1000:
+                break
+
+            plane_pcd = pcd_work.select_by_index(inliers)
+            points = np.asarray(plane_pcd.points)
+            colors = np.asarray(plane_pcd.colors)
+
+            p0, u, v = _plane_basis(plane_model)
+            img, min_x, min_y, px_size_x, _ = _rasterize_plane_points(
+                points, colors, p0, u, v
+            )
+
+            gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+            gray = cv2.medianBlur(gray, 3)
+            corners, ids, _ = _detect_markers(gray, dictionary)
+
+            if ids is None or len(corners) == 0:
+                pcd_work = pcd_work.select_by_index(inliers, invert=True)
+                continue
+
+            ids = ids.flatten().tolist()
+            if aruco_id is not None and aruco_id in ids:
+                idx = ids.index(aruco_id)
+            else:
+                perimeters = [float(cv2.arcLength(c[0], True)) for c in corners]
+                idx = int(np.argmax(perimeters))
+            marker_id = int(ids[idx])
+            marker_corners_px = np.array(corners[idx][0], dtype=float)
+
+            marker_corners_3d = []
+            for px, py in marker_corners_px:
+                coord_x = min_x + (px + 0.5) * px_size_x
+                coord_y = min_y + (py + 0.5) * px_size_x
+                point_3d = p0 + coord_x * u + coord_y * v
+                marker_corners_3d.append(point_3d)
+            marker_corners_3d = np.array(marker_corners_3d)
+
+            edges = [
+                float(np.linalg.norm(marker_corners_3d[i] - marker_corners_3d[(i + 1) % 4]))
+                for i in range(4)
+            ]
+            marker_size_mesh = float(np.mean(edges))
+            if marker_size_mesh <= 0:
+                raise ValueError("Tamanho do ArUco na malha é inválido.")
+
+            scale = real_marker_size_m / marker_size_mesh
+            return {
+                "scale": float(scale),
+                "marker_size_mesh": marker_size_mesh,
+                "marker_size_m": float(real_marker_size_m),
+                "aruco_id": marker_id,
+                "aruco_dict": dict_name,
+                "corners_3d": marker_corners_3d.tolist(),
+            }
+
+    raise ValueError("ArUco não detectado no plano principal.")
+
+
+def compute_aruco_scale_from_mesh(
+    mesh_path: str,
+    real_marker_size: float,
+    input_unit: str = "cm",
+    aruco_dict: Union[str, List[str]] = "DICT_4X4_50",
+    aruco_id: Optional[int] = 0,
+) -> Dict[str, Union[float, int, str, List[List[float]]]]:
+    pcd, source = _load_colored_point_cloud(mesh_path)
+    result = compute_aruco_scale_from_point_cloud(
+        pcd=pcd,
+        real_marker_size=real_marker_size,
+        input_unit=input_unit,
+        aruco_dict=aruco_dict,
+        aruco_id=aruco_id,
+    )
+    result["source_path"] = source
+    return result

@@ -9,7 +9,11 @@ import numpy as np
 from src.camera_calibration import run_calibration_process, exibir_marcador_na_tela
 from src.acquisition import save_video_frames_fps
 from src.reconstruction import run_colmap_reconstruction
-from src.processing import compute_volume_from_mesh, generate_mesh_from_dense_point_cloud
+from src.processing import (
+    compute_volume_from_mesh,
+    generate_mesh_from_dense_point_cloud,
+    compute_aruco_scale_from_mesh,
+)
 from ui_local import *
 
 
@@ -327,43 +331,99 @@ def run_volume_module(cfg):
         root_master.destroy()
         return None
 
-    messagebox.showinfo(
-        "Seleção de Segmento",
-        "A janela 3D abrirá.\n\n"
-        "1) Use Shift + Clique para marcar 2 pontos.\n"
-        "2) Pressione Q ou feche a janela para concluir.",
+    aruco_result = None
+    segment_result = None
+
+    usar_aruco = messagebox.askyesno(
+        "Escala Automática (ArUco)",
+        "Deseja usar o ArUco para escala automática?\n"
+        "O marcador precisa estar visível e com cores na reconstrução.",
         parent=root_master
     )
 
-    while True:
-        try:
-            p1, p2 = _pick_segment_points(mesh_path)
-            if np.allclose(p1, p2):
-                raise ValueError(
-                    "Os dois pontos selecionados são iguais.\n"
-                    "Selecione dois pontos diferentes (Shift + Clique)."
-                )
-            break
-        except Exception as e:
-            retry = messagebox.askyesno(
-                "Erro na Seleção",
-                f"{e}\n\nDeseja tentar novamente?",
+    if usar_aruco:
+        aruco_size = simpledialog.askfloat(
+            "Tamanho do ArUco",
+            "Digite o tamanho real do lado do ArUco (em mm):",
+            initialvalue=100.0,
+            parent=root_master
+        )
+        if aruco_size is None or aruco_size <= 0:
+            messagebox.showerror(
+                "Erro de Entrada",
+                "Tamanho do ArUco não informado ou inválido.",
                 parent=root_master
             )
-            if not retry:
-                root_master.destroy()
-                return None
+            usar_aruco = False
+        else:
+            try:
+                aruco_result = compute_aruco_scale_from_mesh(
+                    mesh_path=mesh_path,
+                    real_marker_size=aruco_size,
+                    input_unit="mm",
+                    aruco_dict=[
+                        "DICT_4X4_50",
+                        "DICT_4X4_100",
+                        "DICT_4X4_250",
+                        "DICT_4X4_1000",
+                    ],
+                    aruco_id=0,
+                )
+            except Exception as e:
+                retry = messagebox.askyesno(
+                    "ArUco não detectado",
+                    f"{e}\n\nDeseja selecionar 2 pontos manualmente?",
+                    parent=root_master
+                )
+                if not retry:
+                    root_master.destroy()
+                    return None
+                usar_aruco = False
 
-    real_distance = simpledialog.askfloat(
-        "Comprimento Real",
-        "Digite o comprimento real do segmento (em metros):",
-        parent=root_master
-    )
+    if not usar_aruco:
+        messagebox.showinfo(
+            "Seleção de Segmento",
+            "A janela 3D abrirá.\n\n"
+            "1) Use Shift + Clique para marcar 2 pontos.\n"
+            "2) Pressione Q ou feche a janela para concluir.",
+            parent=root_master
+        )
 
-    if real_distance is None:
-        messagebox.showerror("Erro de Entrada", "Comprimento real não informado.", parent=root_master)
-        root_master.destroy()
-        return None
+        while True:
+            try:
+                p1, p2 = _pick_segment_points(mesh_path)
+                if np.allclose(p1, p2):
+                    raise ValueError(
+                        "Os dois pontos selecionados são iguais.\n"
+                        "Selecione dois pontos diferentes (Shift + Clique)."
+                    )
+                break
+            except Exception as e:
+                retry = messagebox.askyesno(
+                    "Erro na Seleção",
+                    f"{e}\n\nDeseja tentar novamente?",
+                    parent=root_master
+                )
+                if not retry:
+                    root_master.destroy()
+                    return None
+
+        real_distance = simpledialog.askfloat(
+            "Comprimento Real",
+            "Digite o comprimento real do segmento (em metros):",
+            parent=root_master
+        )
+
+        if real_distance is None:
+            messagebox.showerror("Erro de Entrada", "Comprimento real não informado.", parent=root_master)
+            root_master.destroy()
+            return None
+
+        segment_result = {
+            "p1": p1,
+            "p2": p2,
+            "real_distance_m": float(real_distance),
+        }
 
     volumes_output = cfg.get("paths", {}).get("volumes_output", "./data/out/volumes")
     volumes_output = normalize_path(volumes_output)
@@ -372,15 +432,23 @@ def run_volume_module(cfg):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     export_stl = os.path.join(volumes_output, f"mesh_escalada_{timestamp}.stl")
 
-    result = compute_volume_from_mesh(
-        mesh_path=mesh_path,
-        segment_p1=p1,
-        segment_p2=p2,
-        real_distance=real_distance,
-        input_unit="m",
-        output_unit="m3",
-        export_stl_path=export_stl
-    )
+    if usar_aruco and aruco_result:
+        result = compute_volume_from_mesh(
+            mesh_path=mesh_path,
+            scale=aruco_result["scale"],
+            output_unit="m3",
+            export_stl_path=export_stl
+        )
+    else:
+        result = compute_volume_from_mesh(
+            mesh_path=mesh_path,
+            segment_p1=segment_result["p1"],
+            segment_p2=segment_result["p2"],
+            real_distance=segment_result["real_distance_m"],
+            input_unit="m",
+            output_unit="m3",
+            export_stl_path=export_stl
+        )
 
     validation = None
     if messagebox.askyesno(
@@ -435,11 +503,7 @@ def run_volume_module(cfg):
         "unit": result["unit"],
         "method": result["method"],
         "scale": float(result["scale"]),
-        "segment": {
-            "p1": [float(x) for x in p1.tolist()],
-            "p2": [float(x) for x in p2.tolist()],
-            "real_distance_m": float(real_distance)
-        },
+        "scale_source": "aruco" if usar_aruco and aruco_result else "segment",
         "export_stl": normalize_path(export_stl),
         "summary": {
             "volume_m3": volume_m3,
@@ -447,9 +511,27 @@ def run_volume_module(cfg):
             "volume_cm3": volume_cm3,
             "method": result["method"],
             "scale": float(result["scale"]),
-            "segment_length_m": float(real_distance),
         }
     }
+    if usar_aruco and aruco_result:
+        result_payload["aruco"] = {
+            "id": int(aruco_result["aruco_id"]),
+            "dict": aruco_result.get("aruco_dict", ""),
+            "marker_size_m": float(aruco_result["marker_size_m"]),
+            "marker_size_mesh": float(aruco_result["marker_size_mesh"]),
+            "source_path": normalize_path(aruco_result["source_path"]),
+            "corners_3d": aruco_result["corners_3d"],
+        }
+        result_payload["summary"]["aruco_id"] = int(aruco_result["aruco_id"])
+        result_payload["summary"]["aruco_marker_size_m"] = float(aruco_result["marker_size_m"])
+        result_payload["summary"]["aruco_marker_size_mesh"] = float(aruco_result["marker_size_mesh"])
+    else:
+        result_payload["segment"] = {
+            "p1": [float(x) for x in segment_result["p1"].tolist()],
+            "p2": [float(x) for x in segment_result["p2"].tolist()],
+            "real_distance_m": float(segment_result["real_distance_m"])
+        }
+        result_payload["summary"]["segment_length_m"] = float(segment_result["real_distance_m"])
     if validation:
         result_payload["validation"] = validation
         result_payload["summary"]["validation_error_percent"] = float(validation["error_percent"])
@@ -470,13 +552,30 @@ def run_volume_module(cfg):
         f"- cm³: **{summary['volume_cm3']:.2f} cm³**",
         f"- Método: **{summary['method']}**",
         f"- Escala aplicada: **{summary['scale']:.6f}**",
-        f"- Segmento real: **{summary['segment_length_m']:.4f} m**",
+        f"- Fonte da escala: **{result_payload['scale_source']}**",
         "",
         "## Arquivos",
         f"- Malha original: `{result_payload['mesh_path']}`",
         f"- Malha escalada: `{result_payload['export_stl']}`",
         f"- JSON completo: `{normalize_path(result_file)}`",
     ]
+    if "aruco" in result_payload:
+        ar = result_payload["aruco"]
+        md_lines += [
+            "",
+            "## ArUco (escala automática)",
+            f"- ID: **{ar['id']}**",
+            f"- Dicionário: **{ar.get('dict', '')}**",
+            f"- Lado real: **{ar['marker_size_m']:.4f} m**",
+            f"- Lado na malha: **{ar['marker_size_mesh']:.6f} unidades**",
+            f"- Fonte de cores: `{ar['source_path']}`",
+        ]
+    else:
+        md_lines += [
+            "",
+            "## Detalhes do segmento (escala)",
+            f"- Segmento real: **{summary['segment_length_m']:.4f} m**",
+        ]
     if "validation" in result_payload:
         v = result_payload["validation"]
         md_lines += [
@@ -486,12 +585,13 @@ def run_volume_module(cfg):
             f"- Real informado: **{v['real_distance_m']:.4f} m**",
             f"- Erro: **{v['error_percent']:.2f}%**",
         ]
-    md_lines += [
-        "",
-        "## Detalhes do segmento (escala)",
-        f"- Ponto 1: `{result_payload['segment']['p1']}`",
-        f"- Ponto 2: `{result_payload['segment']['p2']}`",
-    ]
+    if "segment" in result_payload:
+        md_lines += [
+            "",
+            "## Detalhes do segmento (escala)",
+            f"- Ponto 1: `{result_payload['segment']['p1']}`",
+            f"- Ponto 2: `{result_payload['segment']['p2']}`",
+        ]
 
     with open(report_file, "w", encoding="utf-8") as f:
         f.write("\n".join(md_lines))
