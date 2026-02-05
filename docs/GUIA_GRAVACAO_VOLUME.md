@@ -282,13 +282,16 @@ reconstructions/
 
 1. Clique em **"Calcular Volume"**
 2. Selecione o arquivo `.ply` ou `.stl`
-3. Na janela 3D:
+3. Escolha o método de escala:
+   - **ArUco (automático):** informe o tamanho real do lado do marcador (em mm)
+   - **Manual:** selecione 2 pontos na janela 3D
+4. (Manual) Na janela 3D:
    - **Shift + Clique** em 2 pontos (distância conhecida)
    - Pressione **Q** para confirmar
-4. Digite o comprimento real (em metros)
-5. Veja o resultado!
+5. (Manual) Digite o comprimento real (em metros)
+6. Veja o resultado!
 
-> **Nota:** Quando implementarmos a detecção automática de ArUco, os passos 3-4 serão automáticos!
+> **Nota:** A escala automática com ArUco exige **cores** na reconstrução. Se a malha não tiver cores, o sistema tentará usar `fused.ply` na mesma pasta.
 
 ---
 
@@ -344,6 +347,7 @@ Para validar o resultado:
 | Marcador borrado | Melhore iluminação/foco |
 | Marcador com reflexo | Use papel fosco |
 | Marcador parcialmente coberto | Reposicione na cena |
+| Malha sem cores | Use `.ply` com cores ou tenha `fused.ply` na mesma pasta |
 
 ### 7.3 Volume incorreto
 
@@ -399,7 +403,7 @@ Isso acontece quando algumas partes do objeto não foram capturadas:
          ↓
 5. Sistema mede o ArUco no 3D e compara com o tamanho real
          ↓
-6. Calcula a escala automaticamente
+6. Calcula a escala automaticamente (quando detectado)
          ↓
 7. Aplica no volume
 ```
