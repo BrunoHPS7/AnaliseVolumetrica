@@ -8,6 +8,24 @@ from tkinter import filedialog, messagebox, ttk, simpledialog
 import open3d as o3d  # Certifique-se de ter instalado: pip install open3d
 
 
+def _center_dialog_parent(root, width=420, height=320):
+    root.update_idletasks()
+    sw = root.winfo_screenwidth()
+    sh = root.winfo_screenheight()
+    x = int((sw - width) / 2)
+    y = int((sh - height) / 2)
+    root.geometry(f"{width}x{height}+{x}+{y}")
+    try:
+        root.deiconify()
+        root.attributes("-alpha", 0.0)
+        root.lift()
+    except Exception:
+        pass
+    root.update()
+
+
+
+
 def converter_ply_para_obj(arquivo_ply):
     if not os.path.exists(arquivo_ply):
         logging.error(f"Conversão falhou: Arquivo {arquivo_ply} não encontrado.")
@@ -50,6 +68,45 @@ def configurar_logging(pasta_projeto):
 # Padronizar os caminhos entre Sistemas Operacionais:
 def normalize_path(path: str) -> str:
     return path.replace("\\", "/")
+
+
+def _colmap_help(tool: str) -> str:
+    try:
+        return subprocess.check_output(
+            ["colmap", tool, "--help"],
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+        )
+    except Exception:
+        return ""
+
+
+def _colmap_has_option(tool: str, option_name: str) -> bool:
+    return option_name in _colmap_help(tool)
+
+
+def _feature_extractor_opts(config) -> str:
+    opts = []
+    if _colmap_has_option("feature_extractor", "--FeatureExtraction.use_gpu"):
+        opts += ["--FeatureExtraction.use_gpu", str(config["use_gpu"])]
+    elif _colmap_has_option("feature_extractor", "--SiftExtraction.use_gpu"):
+        opts += ["--SiftExtraction.use_gpu", str(config["use_gpu"])]
+
+    if _colmap_has_option("feature_extractor", "--FeatureExtraction.num_threads"):
+        opts += ["--FeatureExtraction.num_threads", str(config["threads"])]
+    elif _colmap_has_option("feature_extractor", "--SiftExtraction.num_threads"):
+        opts += ["--SiftExtraction.num_threads", str(config["threads"])]
+    return " ".join(opts)
+
+
+def _exhaustive_matcher_opts(config) -> str:
+    opts = []
+    if _colmap_has_option("exhaustive_matcher", "--FeatureMatching.use_gpu"):
+        opts += ["--FeatureMatching.use_gpu", str(config["use_gpu"])]
+    elif _colmap_has_option("exhaustive_matcher", "--SiftMatching.use_gpu"):
+        opts += ["--SiftMatching.use_gpu", str(config["use_gpu"])]
+    return " ".join(opts)
 
 
 # Janela de Progresso Gráfica
@@ -137,8 +194,10 @@ def exibir_erro_com_log(mensagem, log_path, sistema):
         try:
             if sistema == "Windows":
                 os.startfile(log_path)
+            elif sistema == "Darwin":
+                subprocess.run(["open", os.path.abspath(log_path)])
             else:
-                subprocess.run(["xdg-open", log_path])
+                subprocess.run(["xdg-open", os.path.abspath(log_path)])
         except Exception as e:
             print(f"Não foi possível abrir o log: {e}")
         root.destroy()
@@ -165,9 +224,10 @@ def selecionar_pasta_frames(caminho_base_cfg):
     root_master = tk.Tk()
     root_master.withdraw()
     root_master.attributes('-topmost', True)
+    _center_dialog_parent(root_master)
 
     titulo_aviso = "Atenção: Seleção de Fotos"
-    instrucao = "Na próxima tela, selecione a PASTA que contém os frames para a reconstrução."
+    instrucao = "Na próxima tela, selecione a PASTA que contém os frames (as imagens podem não aparecer)."
 
     # 2. Seleção da Pasta (Tratamento Multiplataforma)
     pasta_selecionada = None
@@ -199,6 +259,33 @@ def selecionar_pasta_frames(caminho_base_cfg):
         fotos_encontradas = [f for f in arquivos_na_pasta if f.lower().endswith(extensoes_fotos)]
 
         if not fotos_encontradas:
+            subpastas = [
+                os.path.join(pasta_selecionada, d)
+                for d in os.listdir(pasta_selecionada)
+                if os.path.isdir(os.path.join(pasta_selecionada, d))
+            ]
+            subpastas_com_fotos = []
+            for sub in subpastas:
+                try:
+                    itens = os.listdir(sub)
+                    if any(i.lower().endswith(extensoes_fotos) for i in itens):
+                        subpastas_com_fotos.append(sub)
+                except Exception:
+                    continue
+            if len(subpastas_com_fotos) == 1:
+                usar = messagebox.askyesno(
+                    "Subpasta com fotos encontrada",
+                    "Nenhuma foto foi encontrada na pasta selecionada.\n\n"
+                    f"Encontramos fotos em:\n{subpastas_com_fotos[0]}\n\n"
+                    "Deseja usar essa pasta?",
+                    parent=root_master
+                )
+                if usar:
+                    pasta_selecionada = subpastas_com_fotos[0]
+                    arquivos_na_pasta = os.listdir(pasta_selecionada)
+                    fotos_encontradas = [f for f in arquivos_na_pasta if f.lower().endswith(extensoes_fotos)]
+
+        if not fotos_encontradas:
             tipos_str = ", ".join(['.jpg', '.png', '.jpeg'])
             messagebox.showerror("Pasta sem Fotos",
                                  f"A pasta selecionada não contém fotos válidas!\n\n"
@@ -225,6 +312,7 @@ def obter_pasta_reconstrucao(pasta_base_colmap):
     root_master = tk.Tk()
     root_master.withdraw()
     root_master.attributes('-topmost', True)
+    _center_dialog_parent(root_master)
 
     while True:
         # 2. Solicita o nome do projeto
@@ -323,10 +411,13 @@ def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
 
     print("\n" + "=" * 50 + "\n      INICIANDO RECONSTRUÇÃO 3D\n" + "=" * 50)
 
+    feature_opts = _feature_extractor_opts(CONFIG)
+    matcher_opts = _exhaustive_matcher_opts(CONFIG)
+
     steps = [
-        (f"colmap feature_extractor --database_path {db} --image_path {img_dir} --SiftExtraction.use_gpu {CONFIG['use_gpu']} --SiftExtraction.num_threads {CONFIG['threads']}",
+        (f"colmap feature_extractor --database_path {db} --image_path {img_dir} {feature_opts}".strip(),
          "1/7: Extração de Features"),
-        (f"colmap exhaustive_matcher --database_path {db} --SiftMatching.use_gpu {CONFIG['use_gpu']}",
+        (f"colmap exhaustive_matcher --database_path {db} {matcher_opts}".strip(),
          "2/7: Matcher Exaustivo"),
         (f"colmap mapper --database_path {db} --image_path {img_dir} --output_path {sparse}",
          "3/7: Reconstrução Esparsa"),

@@ -8,6 +8,7 @@ tqdm
 
 # Interface / Imagens
 Pillow
+customtkinter
 
 # Backend / Comunicação
 Flask

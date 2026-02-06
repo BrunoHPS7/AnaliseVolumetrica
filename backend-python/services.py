@@ -22,6 +22,17 @@ def normalize_path(p):
     return p.replace("\\", "/")
 
 
+def _get_parent_root(parent=None, withdraw=True, topmost=True):
+    if parent is not None:
+        return parent, False
+    root = tk.Tk()
+    if withdraw:
+        root.withdraw()
+    if topmost:
+        root.attributes('-topmost', True)
+    return root, True
+
+
 # Carrega as configurações:
 def load_config(path=None):
     if path is None:
@@ -32,13 +43,11 @@ def load_config(path=None):
 
 
 # Módulo de Calibração:
-def run_calibration_module(cfg):
+def run_calibration_module(cfg, parent=None):
     print("\n=== MÓDULO: CAMERA CALIBRATION ===")
 
     # 1. Instância base única e oculta para evitar janelas "tk" vazias
-    root_master = tk.Tk()
-    root_master.withdraw()
-    root_master.attributes('-topmost', True)
+    root_master, created_root = _get_parent_root(parent)
 
     ja_tem = messagebox.askyesno("Calibração", "Você já possui uma pasta com as Fotos para Calibração?",
                                  parent=root_master)
@@ -63,7 +72,8 @@ def run_calibration_module(cfg):
             # Isso faz o código "esperar" você fechar o tabuleiro antes de pedir a medida.
             exibir_marcador_na_tela(dims, root_parent=root_master)
         else:
-            root_master.destroy()
+            if created_root:
+                root_master.destroy()
             return False
 
     # 2. Entrada do tamanho do quadrado
@@ -75,7 +85,8 @@ def run_calibration_module(cfg):
 
     if square_size is None:
         messagebox.showerror("Erro de Entrada", "Medida não inserida. O processo foi interrompido.", parent=root_master)
-        root_master.destroy()
+        if created_root:
+            root_master.destroy()
         return False
 
     # 3. Seleção da pasta de fotos
@@ -84,7 +95,8 @@ def run_calibration_module(cfg):
     if not pasta_final:
         messagebox.showerror("Erro de Calibração", "Nenhuma pasta foi selecionada. O processo foi interrompido.",
                              parent=root_master)
-        root_master.destroy()
+        if created_root:
+            root_master.destroy()
         return False
 
     # 4. TRATAMENTO: Verificar se a pasta contém fotos válidas (evitar vídeos/pastas vazias)
@@ -98,11 +110,13 @@ def run_calibration_module(cfg):
                                  "Nenhuma foto encontrada na pasta selecionada!\n\n"
                                  "Certifique-se de que a pasta contém imagens. Vídeos não são aceitos aqui.",
                                  parent=root_master)
-            root_master.destroy()
+            if created_root:
+                root_master.destroy()
             return False
     except Exception as e:
         messagebox.showerror("Erro de Acesso", f"Erro ao ler a pasta: {e}", parent=root_master)
-        root_master.destroy()
+        if created_root:
+            root_master.destroy()
         return False
 
     # 5. Configurações para o processamento técnico
@@ -114,7 +128,8 @@ def run_calibration_module(cfg):
     }
 
     # Fecha o root_master antes do processamento pesado para limpar a memória da interface
-    root_master.destroy()
+    if created_root:
+        root_master.destroy()
 
     # Chama o processamento
     run_calibration_process(settings)
@@ -123,19 +138,19 @@ def run_calibration_module(cfg):
 
 
 # Módulo de Extração:
-def run_opencv_module(cfg):
+def run_opencv_module(cfg, parent=None):
     print("\n=== MÓDULO: OPENCV (EXTRAÇÃO) ===")
 
     # Criamos a instância base oculta para evitar janelas "fantasmas"
-    root_master = tk.Tk()
-    root_master.withdraw()
+    root_master, created_root = _get_parent_root(parent)
 
     video_escolhido = selecionar_arquivo_video()
 
     # 1. TRATAMENTO: Caso o usuário cancele a seleção
     if not video_escolhido:
         messagebox.showerror("Erro de Seleção", "Nenhum vídeo foi selecionado. A extração foi cancelada.")
-        root_master.destroy()
+        if created_root:
+            root_master.destroy()
         return False
 
     # 2. TRATAMENTO: Verificar se o arquivo tem formato de vídeo válido
@@ -145,7 +160,8 @@ def run_opencv_module(cfg):
         messagebox.showerror("Arquivo Inválido",
                              f"O arquivo selecionado não é um vídeo válido.\n\n"
                              f"Tipos aceitos: {tipos_str}")
-        root_master.destroy()
+        if created_root:
+            root_master.destroy()
         return False
 
     base_out = cfg["paths"]["frames_output"]
@@ -162,7 +178,8 @@ def run_opencv_module(cfg):
 
         if not nome_pasta:
             messagebox.showerror("Erro de Entrada", "Nome da pasta não definido. A extração foi cancelada.")
-            root_master.destroy()
+            if created_root:
+                root_master.destroy()
             return False
 
         caminho_frames = os.path.join(base_out, nome_pasta)
@@ -215,13 +232,15 @@ def run_opencv_module(cfg):
             root_erro.wait_window()
 
             if not resposta.get():
-                root_master.destroy()
+                if created_root:
+                    root_master.destroy()
                 return False
             continue
 
         break
 
-    root_master.destroy()
+    if created_root:
+        root_master.destroy()
 
     # 5. Execução da extração
     save_video_frames_fps(
@@ -233,7 +252,7 @@ def run_opencv_module(cfg):
 
 
 # Módulo de Reconstrução:
-def run_reconstruction_module(cfg):
+def run_reconstruction_module(cfg, parent=None):
     print("\n=== MÓDULO: RECONSTRUCTION (COLMAP) ===")
     proj_dir = run_colmap_reconstruction(
         normalize_path(cfg["paths"]["colmap_input"]),
@@ -255,15 +274,14 @@ def run_reconstruction_module(cfg):
                 output_stl_path=output_stl,
             )
         except Exception as e:
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes('-topmost', True)
+            root, created_root = _get_parent_root(parent)
             messagebox.showwarning(
                 "Aviso",
                 f"Reconstrução concluída, mas a malha automática falhou:\n{e}",
                 parent=root
             )
-            root.destroy()
+            if created_root:
+                root.destroy()
     return True
 
 
@@ -348,19 +366,18 @@ def _choose_volume_mode(parent):
     return choice["value"]
 
 
-def run_volume_module(cfg):
+def run_volume_module(cfg, parent=None):
     print("\n=== MÓDULO: VOLUME (MALHA) ===", file=sys.stderr)
 
-    root_master = tk.Tk()
-    root_master.withdraw()
-    root_master.attributes('-topmost', True)
+    root_master, created_root = _get_parent_root(parent)
 
     base_recon = cfg.get("paths", {}).get("colmap_output", "./data/out/reconstructions")
     mesh_path = selecionar_arquivo_malha(base_recon)
 
     if not mesh_path:
         messagebox.showerror("Erro de Seleção", "Nenhuma malha foi selecionada.", parent=root_master)
-        root_master.destroy()
+        if created_root:
+            root_master.destroy()
         return None
 
     aruco_result = None
@@ -411,7 +428,8 @@ def run_volume_module(cfg):
                     parent=root_master
                 )
                 if not retry:
-                    root_master.destroy()
+                    if created_root:
+                        root_master.destroy()
                     return None
                 usar_aruco = False
 
@@ -440,7 +458,8 @@ def run_volume_module(cfg):
                     parent=root_master
                 )
                 if not retry:
-                    root_master.destroy()
+                    if created_root:
+                        root_master.destroy()
                     return None
 
         real_distance = simpledialog.askfloat(
@@ -451,7 +470,8 @@ def run_volume_module(cfg):
 
         if real_distance is None:
             messagebox.showerror("Erro de Entrada", "Comprimento real não informado.", parent=root_master)
-            root_master.destroy()
+            if created_root:
+                root_master.destroy()
             return None
 
         segment_result = {
@@ -463,7 +483,8 @@ def run_volume_module(cfg):
     choice = _choose_volume_mode(root_master)
     if choice is None:
         messagebox.showerror("Erro de Seleção", "Tipo de volume não informado.", parent=root_master)
-        root_master.destroy()
+        if created_root:
+            root_master.destroy()
         return None
 
     if choice == "auto":
@@ -520,7 +541,8 @@ def run_volume_module(cfg):
             parent=root_master
         )
         if not fallback:
-            root_master.destroy()
+            if created_root:
+                root_master.destroy()
             return None
 
     validation = None
@@ -716,5 +738,6 @@ def run_volume_module(cfg):
         parent=root_master
     )
 
-    root_master.destroy()
+    if created_root:
+        root_master.destroy()
     return result_payload
