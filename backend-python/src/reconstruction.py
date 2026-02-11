@@ -154,12 +154,15 @@ class ReconstructProgressWindow:
         self._spinner_running = False
         self._spinner_job = None
         self._last_progress = None
+        self._eta_step_ema = None
+        self._eta_total_ema = None
 
     def start_step(self, step_name):
         self.step_start = time.time()
         self.label_sub.config(text=step_name)
         self._spinner_index = 0
         self._last_progress = None
+        self._eta_step_ema = None
         self._start_spinner()
         self._update_time()
 
@@ -221,7 +224,9 @@ class ReconstructProgressWindow:
         if current <= 0:
             return None
         remaining = int(elapsed * (total - current) / max(current, 1))
-        return max(0, remaining)
+        raw = max(0, remaining)
+        self._eta_step_ema = self._ema(self._eta_step_ema, raw)
+        return int(self._eta_step_ema)
 
     def _update_overall_eta(self, elapsed_step):
         elapsed_total = int(time.time() - self.overall_start)
@@ -242,7 +247,14 @@ class ReconstructProgressWindow:
             return
         total_est = int(elapsed_total / completed * self.total_steps)
         remaining = max(0, total_est - elapsed_total)
-        self.label_eta.config(text=f"ETA total: {remaining}s")
+        self._eta_total_ema = self._ema(self._eta_total_ema, remaining)
+        self.label_eta.config(text=f"ETA total: {int(self._eta_total_ema)}s")
+
+    @staticmethod
+    def _ema(prev, value, alpha: float = 0.2):
+        if prev is None:
+            return float(value)
+        return prev + alpha * (value - prev)
 
     def _start_spinner(self):
         self._spinner_running = True
@@ -523,7 +535,7 @@ def obter_pasta_reconstrucao(pasta_base_colmap):
 # Pipeline Principal
 def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
     sistema = platform.system()
-    CONFIG = {"threads": 5, "use_gpu": 0, "gpu_index": "0", "max_img_size": 4000}
+    CONFIG = {"threads": 10, "use_gpu": 1, "gpu_index": "0", "max_img_size": 4000}
 
     pasta_frames = selecionar_pasta_frames(frames_root_dir)
     if not pasta_frames:
