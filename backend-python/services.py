@@ -13,6 +13,7 @@ from src.processing import (
     compute_volume_from_mesh,
     generate_mesh_from_dense_point_cloud,
     compute_aruco_scale_from_mesh,
+    compute_a4_scale_from_mesh,
 )
 from ui_local import *
 
@@ -366,6 +367,37 @@ def _choose_volume_mode(parent):
     return choice["value"]
 
 
+def _choose_scale_mode(parent):
+    choice = {"value": None}
+
+    win = tk.Toplevel(parent)
+    win.title("Escala Real")
+    win.geometry("360x220")
+    win.resizable(False, False)
+    win.transient(parent)
+    win.grab_set()
+
+    label = tk.Label(
+        win,
+        text="Escolha a referência de escala:",
+        font=("Arial", 12),
+        pady=10,
+    )
+    label.pack()
+
+    def set_choice(value):
+        choice["value"] = value
+        win.destroy()
+
+    tk.Button(win, text="ArUco", width=30, command=lambda: set_choice("aruco")).pack(pady=4)
+    tk.Button(win, text="Folha A4", width=30, command=lambda: set_choice("a4")).pack(pady=4)
+    tk.Button(win, text="Segmento manual", width=30, command=lambda: set_choice("segment")).pack(pady=4)
+
+    win.protocol("WM_DELETE_WINDOW", win.destroy)
+    parent.wait_window(win)
+    return choice["value"]
+
+
 def run_volume_module(cfg, parent=None):
     print("\n=== MÓDULO: VOLUME (MALHA) ===", file=sys.stderr)
 
@@ -381,19 +413,20 @@ def run_volume_module(cfg, parent=None):
         return None
 
     aruco_result = None
+    a4_result = None
     segment_result = None
     volume_mode = None
     volume_method = "auto"
     primitive_fit = True
 
-    usar_aruco = messagebox.askyesno(
-        "Escala Automática (ArUco)",
-        "Deseja usar o ArUco para escala automática?\n"
-        "O marcador precisa estar visível e com cores na reconstrução.",
-        parent=root_master
-    )
+    scale_mode = _choose_scale_mode(root_master)
+    if scale_mode is None:
+        messagebox.showerror("Erro de Seleção", "Escala real não informada.", parent=root_master)
+        if created_root:
+            root_master.destroy()
+        return None
 
-    if usar_aruco:
+    if scale_mode == "aruco":
         aruco_size = simpledialog.askfloat(
             "Tamanho do ArUco",
             "Digite o tamanho real do lado do ArUco (em mm):",
@@ -406,7 +439,7 @@ def run_volume_module(cfg, parent=None):
                 "Tamanho do ArUco não informado ou inválido.",
                 parent=root_master
             )
-            usar_aruco = False
+            scale_mode = "segment"
         else:
             try:
                 aruco_result = compute_aruco_scale_from_mesh(
@@ -431,9 +464,27 @@ def run_volume_module(cfg, parent=None):
                     if created_root:
                         root_master.destroy()
                     return None
-                usar_aruco = False
+                scale_mode = "segment"
 
-    if not usar_aruco:
+    if scale_mode == "a4":
+        try:
+            a4_result = compute_a4_scale_from_mesh(
+                mesh_path=mesh_path,
+                input_unit="mm",
+            )
+        except Exception as e:
+            retry = messagebox.askyesno(
+                "Folha A4 não detectada",
+                f"{e}\n\nDeseja selecionar 2 pontos manualmente?",
+                parent=root_master
+            )
+            if not retry:
+                if created_root:
+                    root_master.destroy()
+                return None
+            scale_mode = "segment"
+
+    if scale_mode == "segment":
         messagebox.showinfo(
             "Seleção de Segmento",
             "A janela 3D abrirá.\n\n"
@@ -511,10 +562,19 @@ def run_volume_module(cfg, parent=None):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     export_stl = os.path.join(volumes_output, f"mesh_escalada_{timestamp}.stl")
 
-    if usar_aruco and aruco_result:
+    if scale_mode == "aruco" and aruco_result:
         result = compute_volume_from_mesh(
             mesh_path=mesh_path,
             scale=aruco_result["scale"],
+            output_unit="m3",
+            volume_method=volume_method,
+            primitive_fit=primitive_fit,
+            export_stl_path=export_stl
+        )
+    elif scale_mode == "a4" and a4_result:
+        result = compute_volume_from_mesh(
+            mesh_path=mesh_path,
+            scale=a4_result["scale"],
             output_unit="m3",
             volume_method=volume_method,
             primitive_fit=primitive_fit,
@@ -598,7 +658,9 @@ def run_volume_module(cfg, parent=None):
         "unit": result["unit"],
         "method": result["method"],
         "scale": float(result["scale"]),
-        "scale_source": "aruco" if usar_aruco and aruco_result else "segment",
+        "scale_source": "aruco" if scale_mode == "aruco" and aruco_result else (
+            "a4" if scale_mode == "a4" and a4_result else "segment"
+        ),
         "volume_method": volume_mode or "auto",
         "export_stl": normalize_path(export_stl),
         "summary": {
@@ -613,7 +675,7 @@ def run_volume_module(cfg, parent=None):
         result_payload["heightmap"] = result["heightmap"]
     if "primitive_fit" in result:
         result_payload["primitive_fit"] = result["primitive_fit"]
-    if usar_aruco and aruco_result:
+    if scale_mode == "aruco" and aruco_result:
         result_payload["aruco"] = {
             "id": int(aruco_result["aruco_id"]),
             "dict": aruco_result.get("aruco_dict", ""),
@@ -625,6 +687,15 @@ def run_volume_module(cfg, parent=None):
         result_payload["summary"]["aruco_id"] = int(aruco_result["aruco_id"])
         result_payload["summary"]["aruco_marker_size_m"] = float(aruco_result["marker_size_m"])
         result_payload["summary"]["aruco_marker_size_mesh"] = float(aruco_result["marker_size_mesh"])
+    elif scale_mode == "a4" and a4_result:
+        result_payload["a4"] = {
+            "sheet_size_m": a4_result["sheet_size_m"],
+            "sheet_size_mesh": a4_result["sheet_size_mesh"],
+            "source_path": normalize_path(a4_result["source_path"]),
+            "corners_3d": a4_result["corners_3d"],
+        }
+        result_payload["summary"]["a4_sheet_size_m"] = a4_result["sheet_size_m"]
+        result_payload["summary"]["a4_sheet_size_mesh"] = a4_result["sheet_size_mesh"]
     else:
         result_payload["segment"] = {
             "p1": [float(x) for x in segment_result["p1"].tolist()],
@@ -670,6 +741,15 @@ def run_volume_module(cfg, parent=None):
             f"- Lado real: **{ar['marker_size_m']:.4f} m**",
             f"- Lado na malha: **{ar['marker_size_mesh']:.6f} unidades**",
             f"- Fonte de cores: `{ar['source_path']}`",
+        ]
+    elif "a4" in result_payload:
+        a4 = result_payload["a4"]
+        md_lines += [
+            "",
+            "## Folha A4 (escala automática)",
+            f"- Tamanho real (m): **{a4['sheet_size_m']}**",
+            f"- Tamanho na malha: **{a4['sheet_size_mesh']}**",
+            f"- Fonte de cores: `{a4['source_path']}`",
         ]
     else:
         md_lines += [

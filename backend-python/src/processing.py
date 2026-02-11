@@ -697,6 +697,179 @@ def _rasterize_plane_points(
     return img_uint8, float(min_xy[0]), float(min_xy[1]), float(pixel_size), float(pixel_size)
 
 
+def _order_quad_corners(corners: np.ndarray) -> np.ndarray:
+    corners = corners.reshape(4, 2)
+    s = corners.sum(axis=1)
+    diff = np.diff(corners, axis=1).reshape(-1)
+    ordered = np.zeros((4, 2), dtype=float)
+    ordered[0] = corners[np.argmin(s)]  # top-left
+    ordered[2] = corners[np.argmax(s)]  # bottom-right
+    ordered[1] = corners[np.argmin(diff)]  # top-right
+    ordered[3] = corners[np.argmax(diff)]  # bottom-left
+    return ordered
+
+
+def _detect_a4_corners(gray: np.ndarray) -> Optional[np.ndarray]:
+    if gray.dtype != np.uint8:
+        gray = (gray.clip(0, 255)).astype(np.uint8)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    v = np.median(blur)
+    lower = int(max(0, 0.66 * v))
+    upper = int(min(255, 1.33 * v))
+    edges = cv2.Canny(blur, lower, upper)
+    edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=1)
+
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+
+    target_ratio = np.sqrt(2.0)
+    best = None
+    best_score = -1.0
+    img_area = float(gray.shape[0] * gray.shape[1])
+
+    for cnt in contours:
+        peri = cv2.arcLength(cnt, True)
+        if peri <= 0:
+            continue
+        approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+        if len(approx) != 4 or not cv2.isContourConvex(approx):
+            continue
+        area = float(cv2.contourArea(approx))
+        if area < img_area * 0.02 or area > img_area * 0.95:
+            continue
+        corners = approx.reshape(4, 2).astype(float)
+        ordered = _order_quad_corners(corners)
+        edges_len = [
+            float(np.linalg.norm(ordered[i] - ordered[(i + 1) % 4])) for i in range(4)
+        ]
+        if min(edges_len) <= 0:
+            continue
+        ratio = max(edges_len) / min(edges_len)
+        if ratio < 1.30 or ratio > 1.55:
+            continue
+        ratio_score = 1.0 - abs(ratio - target_ratio) / 0.25
+        score = area * max(ratio_score, 0.0)
+        if score > best_score:
+            best_score = score
+            best = ordered
+
+    return best
+
+
+def compute_a4_scale_from_point_cloud(
+    pcd: o3d.geometry.PointCloud,
+    input_unit: str = "mm",
+    max_planes: int = 4,
+) -> Dict[str, Union[float, str, List[List[float]]]]:
+    if pcd.is_empty():
+        raise ValueError("Nuvem de pontos vazia.")
+    if not pcd.has_colors():
+        raise ValueError("Nuvem de pontos sem cores.")
+
+    unit_scale = {"m": 1.0, "cm": 0.01, "mm": 0.001}
+    if input_unit not in unit_scale:
+        raise ValueError("input_unit inválido (use m, cm ou mm).")
+    real_short_m = 210.0 * unit_scale[input_unit]
+    real_long_m = 297.0 * unit_scale[input_unit]
+
+    pcd_work = pcd
+    bbox = pcd.get_axis_aligned_bounding_box()
+    diag = float(np.linalg.norm(bbox.get_extent()))
+    if len(pcd.points) > 400_000:
+        voxel_size = max(diag / 500.0, 1e-6)
+        pcd_work = pcd.voxel_down_sample(voxel_size)
+
+    candidates = []
+    pcd_iter = pcd_work
+    for _ in range(max_planes):
+        if len(pcd_iter.points) < 1000:
+            break
+        plane_model, inliers = pcd_iter.segment_plane(
+            distance_threshold=max(diag * 0.002, 1e-6),
+            ransac_n=3,
+            num_iterations=1000,
+        )
+        if len(inliers) < 1000:
+            break
+
+        plane_pcd = pcd_iter.select_by_index(inliers)
+        points = np.asarray(plane_pcd.points)
+        colors = np.asarray(plane_pcd.colors)
+
+        p0, u, v = _plane_basis(plane_model)
+        img, min_x, min_y, px_size_x, _ = _rasterize_plane_points(
+            points, colors, p0, u, v
+        )
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        corners_px = _detect_a4_corners(gray)
+        if corners_px is None:
+            pcd_iter = pcd_iter.select_by_index(inliers, invert=True)
+            continue
+
+        corners_3d = []
+        for px, py in corners_px:
+            coord_x = min_x + (px + 0.5) * px_size_x
+            coord_y = min_y + (py + 0.5) * px_size_x
+            point_3d = p0 + coord_x * u + coord_y * v
+            corners_3d.append(point_3d)
+        corners_3d = np.array(corners_3d)
+
+        edges = [
+            float(np.linalg.norm(corners_3d[i] - corners_3d[(i + 1) % 4]))
+            for i in range(4)
+        ]
+        edges_sorted = sorted(edges)
+        short_mesh = float(np.mean(edges_sorted[:2]))
+        long_mesh = float(np.mean(edges_sorted[2:]))
+        if short_mesh <= 0 or long_mesh <= 0:
+            pcd_iter = pcd_iter.select_by_index(inliers, invert=True)
+            continue
+
+        scale_short = real_short_m / short_mesh
+        scale_long = real_long_m / long_mesh
+        scale = (scale_short + scale_long) / 2.0
+        consistency = abs(scale_short - scale_long) / max(scale, 1e-9)
+        area_score = float(cv2.contourArea(corners_px.astype(np.float32)))
+        candidates.append({
+            "scale": float(scale),
+            "short_mesh": short_mesh,
+            "long_mesh": long_mesh,
+            "short_m": float(real_short_m),
+            "long_m": float(real_long_m),
+            "corners_3d": corners_3d.tolist(),
+            "consistency": float(consistency),
+            "area_score": area_score,
+        })
+
+        pcd_iter = pcd_iter.select_by_index(inliers, invert=True)
+
+    if not candidates:
+        raise ValueError("Folha A4 não detectada no plano principal.")
+
+    candidates.sort(key=lambda c: (c["consistency"], -c["area_score"]))
+    best = candidates[0]
+    return {
+        "scale": float(best["scale"]),
+        "sheet_size_mesh": [float(best["short_mesh"]), float(best["long_mesh"])],
+        "sheet_size_m": [float(best["short_m"]), float(best["long_m"])],
+        "corners_3d": best["corners_3d"],
+    }
+
+
+def compute_a4_scale_from_mesh(
+    mesh_path: str,
+    input_unit: str = "mm",
+) -> Dict[str, Union[float, str, List[List[float]]]]:
+    pcd, source = _load_colored_point_cloud(mesh_path)
+    result = compute_a4_scale_from_point_cloud(
+        pcd=pcd,
+        input_unit=input_unit,
+    )
+    result["source_path"] = source
+    return result
+
+
 def compute_aruco_scale_from_point_cloud(
     pcd: o3d.geometry.PointCloud,
     real_marker_size: float,

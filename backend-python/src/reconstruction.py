@@ -3,8 +3,10 @@ import os
 import platform
 import logging
 import re
+import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, simpledialog
+from collections import deque
 import open3d as o3d  # Certifique-se de ter instalado: pip install open3d
 
 
@@ -114,12 +116,12 @@ class ReconstructProgressWindow:
     def __init__(self, total_steps):
         self.root = tk.Tk()
         self.root.title("COLMAP Pipeline")
-        self.root.geometry("500x180")
+        self.root.geometry("560x300")
         self.root.attributes('-topmost', True)
 
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        self.root.geometry(f"500x180+{int(sw / 2 - 250)}+{int(sh / 2 - 90)}")
+        self.root.geometry(f"560x300+{int(sw / 2 - 280)}+{int(sh / 2 - 150)}")
 
         self.label_step = tk.Label(self.root, text="Iniciando...", font=("Arial", 10, "bold"))
         self.label_step.pack(pady=(20, 5))
@@ -130,25 +132,146 @@ class ReconstructProgressWindow:
         self.label_sub = tk.Label(self.root, text="Aguardando comandos...", fg="gray")
         self.label_sub.pack()
 
+        self.label_time = tk.Label(self.root, text="Tempo na etapa: 0s", fg="gray")
+        self.label_time.pack(pady=(2, 2))
+
+        self.label_spinner = tk.Label(self.root, text="Processando...", fg="gray")
+        self.label_spinner.pack(pady=(0, 8))
+
+        self.label_eta = tk.Label(self.root, text="ETA total: --", fg="gray")
+        self.label_eta.pack(pady=(0, 8))
+
+        self.log_box = tk.Text(self.root, height=6, width=70, wrap="word", state="disabled")
+        self.log_box.pack(padx=12, pady=(0, 12), fill="both", expand=True)
+
+        self.total_steps = total_steps
+        self.current_step = 0
+        self.overall_start = time.time()
+        self.step_start = time.time()
+        self.log_lines = deque(maxlen=6)
+        self._spinner_chars = ["|", "/", "-", "\\"]
+        self._spinner_index = 0
+        self._spinner_running = False
+        self._spinner_job = None
+        self._last_progress = None
+
+    def start_step(self, step_name):
+        self.step_start = time.time()
+        self.label_sub.config(text=step_name)
+        self._spinner_index = 0
+        self._last_progress = None
+        self._start_spinner()
+        self._update_time()
+
     def update_step(self, step_name, current_step, total_steps):
         self.label_step.config(text=f"Etapa {current_step} de {total_steps}")
         self.label_sub.config(text=step_name)
         self.progress_bar["value"] = (current_step / total_steps) * 100
+        self.current_step = current_step
+        self.start_step(step_name)
         self.root.update()
 
     def update_sub_progress(self, line):
         match = re.search(r"\[(\d+)/(\d+)\]", line)
+        if not match:
+            match = re.search(r"\b(\d+)\s*/\s*(\d+)\b", line)
         if match:
-            self.label_sub.config(text=f"Processando: {match.group(1)} / {match.group(2)}")
+            current = int(match.group(1))
+            total = int(match.group(2))
+            current = max(current, 0)
+            total = max(total, 1)
+            pct = int((current / total) * 100)
+            self._last_progress = (current, total)
+            self.label_sub.config(text=f"Processando: {current} / {total} ({pct}%)")
+        else:
+            self.label_sub.config(text=line[:140])
+        self._append_log(line)
+        self._update_time()
         self.root.update()
 
+    def _append_log(self, line):
+        if not line:
+            return
+        self.log_lines.append(line)
+        self.log_box.configure(state="normal")
+        self.log_box.delete("1.0", "end")
+        self.log_box.insert("end", "\n".join(self.log_lines))
+        self.log_box.configure(state="disabled")
+        self.log_box.see("end")
+
+    def _update_time(self):
+        elapsed = int(time.time() - self.step_start)
+        eta_step = self._estimate_step_eta(elapsed)
+        if eta_step is None:
+            self.label_time.config(text=f"Tempo na etapa: {elapsed}s")
+        else:
+            self.label_time.config(text=f"Tempo na etapa: {elapsed}s | ETA etapa: {eta_step}s")
+        self._update_overall_eta(elapsed)
+
+    def _update_spinner(self):
+        elapsed = int(time.time() - self.step_start)
+        char = self._spinner_chars[self._spinner_index % len(self._spinner_chars)]
+        self._spinner_index += 1
+        self.label_spinner.config(text=f"Em execucao {char}  ({elapsed}s)")
+
+    def _estimate_step_eta(self, elapsed):
+        if not self._last_progress:
+            return None
+        current, total = self._last_progress
+        if current <= 0:
+            return None
+        remaining = int(elapsed * (total - current) / max(current, 1))
+        return max(0, remaining)
+
+    def _update_overall_eta(self, elapsed_step):
+        elapsed_total = int(time.time() - self.overall_start)
+        if self.total_steps <= 0:
+            self.label_eta.config(text="ETA total: --")
+            return
+
+        progress_steps = self.current_step - 1
+        if self._last_progress:
+            current, total = self._last_progress
+            frac = (current / max(total, 1))
+        else:
+            frac = 0.0
+
+        completed = progress_steps + frac
+        if completed <= 0:
+            self.label_eta.config(text="ETA total: --")
+            return
+        total_est = int(elapsed_total / completed * self.total_steps)
+        remaining = max(0, total_est - elapsed_total)
+        self.label_eta.config(text=f"ETA total: {remaining}s")
+
+    def _start_spinner(self):
+        self._spinner_running = True
+        self._schedule_spinner()
+
+    def _schedule_spinner(self):
+        if not self._spinner_running:
+            return
+        self._update_spinner()
+        self._spinner_job = self.root.after(250, self._schedule_spinner)
+
+    def stop_spinner(self):
+        self._spinner_running = False
+        if self._spinner_job is not None:
+            try:
+                self.root.after_cancel(self._spinner_job)
+            except Exception:
+                pass
+            self._spinner_job = None
+
     def close(self):
+        self.stop_spinner()
         self.root.destroy()
 
 
 # Executa os comandos da pipeline com log e GUI:
 def run_cmd_gui(cmd, step_name, gui_window):
     print(f"> {step_name}...")
+    gui_window.start_step(step_name)
     process = subprocess.Popen(
         cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding='utf-8', errors='replace'
@@ -161,6 +284,7 @@ def run_cmd_gui(cmd, step_name, gui_window):
             gui_window.update_sub_progress(line_clean)
 
     process.wait()
+    gui_window.stop_spinner()
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, cmd)
 

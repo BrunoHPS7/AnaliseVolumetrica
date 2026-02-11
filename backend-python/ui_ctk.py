@@ -11,7 +11,6 @@ import customtkinter as ctk
 from services import (
     load_config,
     run_opencv_module,
-    run_calibration_module,
     run_reconstruction_module,
     run_volume_module,
 )
@@ -354,7 +353,6 @@ def build_ui():
 
     steps = [
         ("Extrair Frames", "Extrair frames do vídeo para análise", "🎞️", run_opencv_module),
-        ("Calibrar Câmera", "Calibrar câmera para precisão nas medições", "📷", run_calibration_module),
         ("Reconstruir 3D", "Gerar malha 3D usando COLMAP e MVS", "🧩", run_reconstruction_module),
         ("Calcular Volume", "Calcular volume final do objeto em m³", "📦", run_volume_module),
     ]
@@ -378,7 +376,6 @@ def build_ui():
     history_items = [
         ("Reconstruções", "Projetos gerados pelo COLMAP", _resolve_path(cfg["paths"]["colmap_output"]), "dir"),
         ("Frames", "Pastas de frames extraídos", _resolve_path(cfg["paths"]["frames_output"]), "dir"),
-        ("Calibrações", "Resultados de calibração", _resolve_path(cfg["paths"]["calibration_output_folder"]), "dir"),
         ("Volumes", "Relatórios e resultados de volume", _resolve_path(cfg["paths"]["volumes_output"]), "volumes"),
     ]
 
@@ -398,16 +395,15 @@ def build_ui():
         text_color=TEXT_PRIMARY,
     )
     about_title.pack(pady=(10, 6))
-
     about_text = (
-        "Este aplicativo foi desenvolvido para análise volumétrica 3D a partir de vídeos.\n\n"
+        "Este aplicativo foi desenvolvido para analise volumetrica 3D a partir de videos.\n\n"
         "Fluxo recomendado:\n"
         "1) Extrair frames\n"
-        "2) Calibrar câmera\n"
-        "3) Reconstruir 3D\n"
-        "4) Calcular volume\n\n"
-        "O sistema suporta escala manual, ArUco, volume por altura e detecção de formas regulares."
+        "2) Reconstruir 3D\n"
+        "3) Calcular volume\n\n"
+        "O sistema suporta escala manual, ArUco, folha A4, volume por altura e deteccao de formas regulares."
     )
+
     about_label = ctk.CTkLabel(
         about_frame,
         text=about_text,
@@ -427,3 +423,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
