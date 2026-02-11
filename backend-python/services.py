@@ -13,6 +13,7 @@ from src.reconstruction import run_colmap_reconstruction
 from src.processing import (
     compute_volume_from_mesh,
     generate_mesh_from_dense_point_cloud,
+    compute_segment_scale,
     compute_aruco_scale_from_mesh,
     compute_a4_scale_from_mesh,
     compute_bean_volume_from_point_cloud,
@@ -313,41 +314,246 @@ def _pick_segment_points(mesh_path):
     o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
 
     mesh = o3d.io.read_triangle_mesh(mesh_path, enable_post_processing=True)
-    if mesh.is_empty() or len(mesh.triangles) == 0:
-        tm = trimesh.load(mesh_path, force="mesh")
-        if isinstance(tm, trimesh.Scene):
-            geometries = list(tm.geometry.values())
-            if not geometries:
-                raise ValueError("Nenhuma geometria encontrada no arquivo.")
-            tm = trimesh.util.concatenate(geometries)
-        if tm.is_empty:
-            raise ValueError("Malha vazia ou inválida.")
-        vertices = np.asarray(tm.vertices, dtype=float)
-        faces = np.asarray(tm.faces, dtype=int)
-        mesh = o3d.geometry.TriangleMesh(
-            o3d.utility.Vector3dVector(vertices),
-            o3d.utility.Vector3iVector(faces),
-        )
-    mesh.compute_vertex_normals()
+    if not mesh.is_empty() and len(mesh.vertices) > 0:
+        mesh.compute_vertex_normals()
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = mesh.vertices
+        if len(mesh.vertex_colors) > 0:
+            pcd.colors = mesh.vertex_colors
+        else:
+            pcd.paint_uniform_color([0.7, 0.7, 0.7])
+    else:
+        pcd = o3d.io.read_point_cloud(mesh_path)
+        if pcd.is_empty():
+            tm = trimesh.load(mesh_path, force="mesh")
+            if isinstance(tm, trimesh.Scene):
+                geometries = list(tm.geometry.values())
+                if not geometries:
+                    raise ValueError("Nenhuma geometria encontrada no arquivo.")
+                tm = trimesh.util.concatenate(geometries)
+            if tm.is_empty:
+                raise ValueError("Arquivo vazio ou inválido para seleção de pontos.")
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(np.asarray(tm.vertices, dtype=float))
+        if not pcd.has_colors():
+            pcd.paint_uniform_color([0.7, 0.7, 0.7])
 
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = mesh.vertices
-    pcd.paint_uniform_color([0.7, 0.7, 0.7])
+    points = np.asarray(pcd.points, dtype=float)
+    if points.size == 0:
+        raise ValueError("Sem pontos para selecao.")
 
-    vis = o3d.visualization.VisualizerWithEditing()
-    vis.create_window(window_name="Selecione 2 pontos (Shift + Clique)", width=1280, height=720)
-    vis.add_geometry(pcd)
+    # Em modelos muito pequenos, o marcador do picker parece gigante.
+    # Escalamos apenas a visualizacao para uma diagonal minima e depois
+    # convertemos os pontos escolhidos de volta ao espaco original.
+    bbox_min = points.min(axis=0)
+    bbox_max = points.max(axis=0)
+    diag = float(np.linalg.norm(bbox_max - bbox_min))
+    min_display_diag = 10.0
+    display_scale = 1.0
+    if diag > 1e-12 and diag < min_display_diag:
+        display_scale = min_display_diag / diag
+    display_center = points.mean(axis=0)
+
+    display_points = points.copy()
+    if display_scale != 1.0:
+        display_points = (display_points - display_center) * display_scale
+
+    display_pcd = o3d.geometry.PointCloud()
+    display_pcd.points = o3d.utility.Vector3dVector(display_points)
+    if pcd.has_colors():
+        display_pcd.colors = pcd.colors
+    else:
+        display_pcd.paint_uniform_color([0.7, 0.7, 0.7])
+
+    points_disp = np.asarray(display_pcd.points, dtype=float)
+    # Otimizacao: usar uma amostra para picking/guia quando a nuvem eh muito grande.
+    max_pick_points = 120000
+    if len(points_disp) > max_pick_points:
+        step = int(np.ceil(len(points_disp) / max_pick_points))
+        pick_points = points_disp[::step]
+    else:
+        pick_points = points_disp
+    bbox_min_d = points_disp.min(axis=0)
+    bbox_max_d = points_disp.max(axis=0)
+    diag_disp = float(np.linalg.norm(bbox_max_d - bbox_min_d))
+    marker_radius = max(diag_disp * 0.0006, 5e-7)
+    pick_max_dist = max(diag_disp * 0.03, 1e-6)
+
+    width, height = 1280, 720
+    state = {
+        "picked": [],
+        "markers": [],
+        "center_marker": None,
+        "center_point": None,
+        "frame_count": 0,
+    }
+
+    def _compute_pick_from_screen(vis, u, v):
+        vc = vis.get_view_control()
+        params = vc.convert_to_pinhole_camera_parameters()
+        k = np.asarray(params.intrinsic.intrinsic_matrix, dtype=float)
+        ext = np.asarray(params.extrinsic, dtype=float)
+
+        fx, fy = float(k[0, 0]), float(k[1, 1])
+        cx, cy = float(k[0, 2]), float(k[1, 2])
+        if fx == 0.0 or fy == 0.0:
+            return None
+
+        dir_cam = np.array([(u - cx) / fx, (v - cy) / fy, 1.0], dtype=float)
+        dir_cam /= max(np.linalg.norm(dir_cam), 1e-12)
+
+        r = ext[:3, :3]
+        t = ext[:3, 3]
+        cam_origin = -(r.T @ t)
+        dir_world = r.T @ dir_cam
+        dir_world /= max(np.linalg.norm(dir_world), 1e-12)
+
+        w = pick_points - cam_origin[None, :]
+        tvals = w @ dir_world
+        valid = tvals > 0
+        if not np.any(valid):
+            return None
+
+        idxs = np.where(valid)[0]
+        wv = w[idxs]
+        tv = tvals[idxs]
+        perp = wv - tv[:, None] * dir_world[None, :]
+        dists = np.linalg.norm(perp, axis=1)
+        local_i = int(np.argmin(dists))
+        if float(dists[local_i]) > pick_max_dist:
+            return None
+        idx = int(idxs[local_i])
+        return idx, pick_points[idx]
+
+    def _add_marker(vis, point, color):
+        marker = o3d.geometry.TriangleMesh.create_sphere(radius=marker_radius)
+        marker.compute_vertex_normals()
+        marker.paint_uniform_color(color)
+        marker.translate(point)
+        state["markers"].append(marker)
+        vis.add_geometry(marker)
+        vis.update_renderer()
+
+    def _mark_point(vis, u, v):
+        picked = _compute_pick_from_screen(vis, u, v)
+        if picked is None:
+            print("[PICK] Nenhum ponto valido. Aproxime com zoom e tente novamente.")
+            return False
+        _, point = picked
+        if len(state["picked"]) >= 2:
+            print("[PICK] Ja existem 2 pontos. Use Backspace para remover o ultimo.")
+            return False
+        state["picked"].append(point)
+        color = [1.0, 0.2, 0.2] if len(state["picked"]) == 1 else [0.2, 1.0, 0.2]
+        _add_marker(vis, point, color)
+        print(f"[PICK] Ponto {len(state['picked'])} marcado.")
+        return False
+
+    def _update_center_guide(vis):
+        state["frame_count"] += 1
+        # Atualiza o guia a cada 3 frames para reduzir custo em cenas densas.
+        if state["frame_count"] % 3 != 0:
+            return False
+
+        picked = _compute_pick_from_screen(vis, width * 0.5, height * 0.5)
+        if picked is None:
+            return False
+
+        _, point = picked
+        if state["center_marker"] is None:
+            center_marker = o3d.geometry.TriangleMesh.create_sphere(radius=marker_radius * 0.9)
+            center_marker.compute_vertex_normals()
+            center_marker.paint_uniform_color([0.1, 0.9, 1.0])  # ciano
+            center_marker.translate(point)
+            state["center_marker"] = center_marker
+            state["center_point"] = point
+            vis.add_geometry(center_marker)
+            vis.update_renderer()
+            return False
+
+        prev = state["center_point"]
+        if prev is None:
+            prev = point
+        delta = point - prev
+        if float(np.linalg.norm(delta)) > 0:
+            state["center_marker"].translate(delta)
+            state["center_point"] = point
+            vis.update_geometry(state["center_marker"])
+            vis.update_renderer()
+        return False
+
+    def _mark_center(vis):
+        return _mark_point(vis, width * 0.5, height * 0.5)
+
+    def _undo(vis):
+        if not state["picked"]:
+            return False
+        state["picked"].pop()
+        marker = state["markers"].pop()
+        vis.remove_geometry(marker, reset_bounding_box=False)
+        vis.update_renderer()
+        print("[PICK] Ultimo ponto removido.")
+        return False
+
+    def _finish(vis):
+        vis.close()
+        return False
+
+    vis = o3d.visualization.VisualizerWithKeyCallback()
+    vis.create_window(window_name="Picker: C marca centro | Q conclui", width=width, height=height)
+    vis.add_geometry(display_pcd)
+    try:
+        render = vis.get_render_option()
+        render.point_size = 1.5
+    except Exception:
+        pass
+
+    vis.register_key_callback(ord("C"), _mark_center)
+    vis.register_key_callback(ord("Q"), _finish)
+    vis.register_key_callback(8, _undo)  # Backspace
+    vis.register_key_callback(259, _undo)  # Backspace em alguns backends
+    vis.register_animation_callback(_update_center_guide)
+
+    print("[PICK] Controles de camera nativos ativos (rotacao/pan/zoom).")
+    print("[PICK] Ponto guia ciano mostra o centro na superficie.")
+    print("[PICK] C marca no centro. Backspace desfaz. Q conclui.")
     vis.run()
     vis.destroy_window()
 
-    picked = vis.get_picked_points()
-    if len(picked) < 2:
-        raise ValueError("Selecione pelo menos 2 pontos.")
+    if len(state["picked"]) < 2:
+        raise ValueError("Selecione 2 pontos (tecla C no centro da tela).")
 
-    vertices = np.asarray(pcd.points)
-    p1 = vertices[picked[0]]
-    p2 = vertices[picked[1]]
+    p1 = np.asarray(state["picked"][0], dtype=float)
+    p2 = np.asarray(state["picked"][1], dtype=float)
+    if display_scale != 1.0:
+        p1 = (p1 / display_scale) + display_center
+        p2 = (p2 / display_scale) + display_center
     return p1, p2
+
+
+def _ensure_volume_mesh(mesh_path):
+    import open3d as o3d
+
+    o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
+    mesh = o3d.io.read_triangle_mesh(mesh_path, enable_post_processing=True)
+    if not mesh.is_empty() and len(mesh.triangles) > 0 and len(mesh.vertices) > 0:
+        return mesh_path
+
+    pcd = o3d.io.read_point_cloud(mesh_path)
+    if pcd.is_empty():
+        raise ValueError(
+            "Arquivo selecionado sem malha valida e sem nuvem de pontos valida."
+        )
+
+    dense_dir = os.path.dirname(mesh_path)
+    output_ply = os.path.join(dense_dir, "mesh_poisson_from_dense.ply")
+    output_stl = os.path.join(dense_dir, "mesh_poisson_from_dense.stl")
+    generate_mesh_from_dense_point_cloud(
+        dense_ply_path=mesh_path,
+        output_ply_path=output_ply,
+        output_stl_path=output_stl,
+    )
+    return output_ply
 
 
 def _choose_volume_mode(parent):
@@ -355,7 +561,7 @@ def _choose_volume_mode(parent):
 
     win = tk.Toplevel(parent)
     win.title("Tipo de Volume")
-    win.geometry("360x220")
+    win.geometry("380x260")
     win.resizable(False, False)
     win.transient(parent)
     win.grab_set()
@@ -375,6 +581,7 @@ def _choose_volume_mode(parent):
     tk.Button(win, text="Automático", width=30, command=lambda: set_choice("auto")).pack(pady=4)
     tk.Button(win, text="Forma regular", width=30, command=lambda: set_choice("regular")).pack(pady=4)
     tk.Button(win, text="Monte granular (altura)", width=30, command=lambda: set_choice("heightmap")).pack(pady=4)
+    tk.Button(win, text="Feijao por cor (somente monte)", width=30, command=lambda: set_choice("bean_color")).pack(pady=4)
     tk.Button(win, text="Objeto irregular (malha)", width=30, command=lambda: set_choice("mesh")).pack(pady=4)
 
     win.protocol("WM_DELETE_WINDOW", win.destroy)
@@ -413,6 +620,46 @@ def _choose_scale_mode(parent):
     return choice["value"]
 
 
+def _choose_aruco_mode(parent):
+    choice = {"value": None}
+
+    win = tk.Toplevel(parent)
+    win.title("Medicao do ArUco")
+    win.geometry("420x180")
+    win.resizable(False, False)
+    win.transient(parent)
+    win.grab_set()
+
+    label = tk.Label(
+        win,
+        text="Como deseja medir o ArUco?",
+        font=("Arial", 12),
+        pady=10,
+    )
+    label.pack()
+
+    def set_choice(value):
+        choice["value"] = value
+        win.destroy()
+
+    tk.Button(
+        win,
+        text="Deteccao automatica por imagem",
+        width=35,
+        command=lambda: set_choice("auto"),
+    ).pack(pady=4)
+    tk.Button(
+        win,
+        text="Selecionar 2 pontos no Open3D",
+        width=35,
+        command=lambda: set_choice("manual"),
+    ).pack(pady=4)
+
+    win.protocol("WM_DELETE_WINDOW", win.destroy)
+    parent.wait_window(win)
+    return choice["value"]
+
+
 def run_volume_module(cfg, parent=None):
     print("\n=== MÓDULO: VOLUME (MALHA) ===", file=sys.stderr)
 
@@ -426,6 +673,8 @@ def run_volume_module(cfg, parent=None):
         if created_root:
             root_master.destroy()
         return None
+    scale_geometry_path = mesh_path
+    volume_mesh_path = None
 
     aruco_result = None
     a4_result = None
@@ -433,6 +682,44 @@ def run_volume_module(cfg, parent=None):
     volume_mode = None
     volume_method = "auto"
     primitive_fit = True
+
+    def ensure_volume_mesh_path():
+        nonlocal volume_mesh_path
+        if volume_mesh_path:
+            return True
+
+        proceed = messagebox.askyesno(
+            "Preparar malha para volume",
+            "O arquivo selecionado parece ser uma nuvem de pontos (ex.: fused.ply).\n"
+            "Para calcular volume por malha, uma malha triangulada sera gerada.\n"
+            "Esse processo pode levar alguns minutos.\n\nDeseja continuar?",
+            parent=root_master
+        )
+        if not proceed:
+            return False
+
+        messagebox.showinfo(
+            "Processando",
+            "Gerando malha a partir da nuvem de pontos.\n"
+            "A interface pode ficar ocupada ate finalizar.",
+            parent=root_master
+        )
+        try:
+            volume_mesh_path = _ensure_volume_mesh(mesh_path)
+            if normalize_path(volume_mesh_path) != normalize_path(mesh_path):
+                messagebox.showinfo(
+                    "Malha gerada automaticamente",
+                    f"Malha pronta em:\n{volume_mesh_path}",
+                    parent=root_master
+                )
+            return True
+        except Exception as e:
+            messagebox.showerror(
+                "Erro na malha",
+                f"Nao foi possivel preparar a malha para calculo de volume:\n{e}",
+                parent=root_master
+            )
+            return False
 
     scale_mode = _choose_scale_mode(root_master)
     if scale_mode is None:
@@ -451,40 +738,97 @@ def run_volume_module(cfg, parent=None):
         if aruco_size is None or aruco_size <= 0:
             messagebox.showerror(
                 "Erro de Entrada",
-                "Tamanho do ArUco não informado ou inválido.",
+                "Tamanho do ArUco nao informado ou invalido.",
                 parent=root_master
             )
             scale_mode = "segment"
         else:
-            try:
-                aruco_result = compute_aruco_scale_from_mesh(
-                    mesh_path=mesh_path,
-                    real_marker_size=aruco_size,
-                    input_unit="mm",
-                    aruco_dict=[
-                        "DICT_4X4_50",
-                        "DICT_4X4_100",
-                        "DICT_4X4_250",
-                        "DICT_4X4_1000",
-                    ],
-                    aruco_id=0,
-                )
-            except Exception as e:
-                retry = messagebox.askyesno(
-                    "ArUco não detectado",
-                    f"{e}\n\nDeseja selecionar 2 pontos manualmente?",
+            aruco_mode = _choose_aruco_mode(root_master)
+            if aruco_mode is None:
+                messagebox.showerror(
+                    "Erro de Selecao",
+                    "Modo de medicao do ArUco nao informado.",
                     parent=root_master
                 )
-                if not retry:
-                    if created_root:
-                        root_master.destroy()
-                    return None
-                scale_mode = "segment"
+                if created_root:
+                    root_master.destroy()
+                return None
+
+            if aruco_mode == "manual":
+                messagebox.showinfo(
+                    "Selecao manual do ArUco",
+                    "A janela 3D abrira.\n\n"
+                    "1) Ajuste a camera e deixe um canto do lado do ArUco no CENTRO.\n"
+                    "2) Pressione C para marcar o primeiro canto.\n"
+                    "3) Ajuste o segundo canto no centro e pressione C novamente.\n"
+                    "4) Backspace desfaz e Q conclui.",
+                    parent=root_master
+                )
+                while True:
+                    try:
+                        p1, p2 = _pick_segment_points(scale_geometry_path)
+                        if np.allclose(p1, p2):
+                            raise ValueError(
+                                "Os dois pontos selecionados sao iguais.\n"
+                                "Selecione dois pontos diferentes (tecla C no centro da tela)."
+                            )
+                        break
+                    except Exception as e:
+                        retry = messagebox.askyesno(
+                            "Erro na selecao",
+                            f"{e}\n\nDeseja tentar novamente?",
+                            parent=root_master
+                        )
+                        if not retry:
+                            if created_root:
+                                root_master.destroy()
+                            return None
+
+                real_marker_size_m = float(aruco_size) * 0.001
+                manual_scale = compute_segment_scale(
+                    p1=np.asarray(p1, dtype=float),
+                    p2=np.asarray(p2, dtype=float),
+                    real_distance=real_marker_size_m,
+                )
+                aruco_result = {
+                    "manual": True,
+                    "scale": float(manual_scale),
+                    "marker_size_m": float(real_marker_size_m),
+                    "marker_size_mesh": float(np.linalg.norm(p2 - p1)),
+                    "source_path": normalize_path(scale_geometry_path),
+                    "segment_p1": [float(x) for x in p1.tolist()],
+                    "segment_p2": [float(x) for x in p2.tolist()],
+                }
+            else:
+                try:
+                    aruco_result = compute_aruco_scale_from_mesh(
+                        mesh_path=scale_geometry_path,
+                        real_marker_size=aruco_size,
+                        input_unit="mm",
+                        aruco_dict=[
+                            "DICT_4X4_50",
+                            "DICT_4X4_100",
+                            "DICT_4X4_250",
+                            "DICT_4X4_1000",
+                        ],
+                        aruco_id=0,
+                    )
+                except Exception as e:
+                    retry = messagebox.askyesno(
+                        "ArUco nao detectado",
+                        f"{e}\n\nDeseja selecionar 2 pontos manualmente?",
+                        parent=root_master
+                    )
+                    if not retry:
+                        if created_root:
+                            root_master.destroy()
+                        return None
+                    scale_mode = "segment"
 
     if scale_mode == "a4":
         try:
             a4_result = compute_a4_scale_from_mesh(
-                mesh_path=mesh_path,
+                mesh_path=scale_geometry_path,
                 input_unit="mm",
             )
         except Exception as e:
@@ -509,18 +853,19 @@ def run_volume_module(cfg, parent=None):
         messagebox.showinfo(
             "Seleção de Segmento",
             "A janela 3D abrirá.\n\n"
-            "1) Use Shift + Clique para marcar 2 pontos.\n"
-            "2) Pressione Q ou feche a janela para concluir.",
+            "1) Ajuste a camera e deixe o ponto no centro.\n"
+            "2) Pressione C para marcar cada ponto.\n"
+            "3) Pressione Q ou feche a janela para concluir.",
             parent=root_master
         )
 
         while True:
             try:
-                p1, p2 = _pick_segment_points(mesh_path)
+                p1, p2 = _pick_segment_points(scale_geometry_path)
                 if np.allclose(p1, p2):
                     raise ValueError(
                         "Os dois pontos selecionados são iguais.\n"
-                        "Selecione dois pontos diferentes (Shift + Clique)."
+                        "Selecione dois pontos diferentes (tecla C no centro da tela)."
                     )
                 break
             except Exception as e:
@@ -571,6 +916,10 @@ def run_volume_module(cfg, parent=None):
         volume_mode = "heightmap"
         volume_method = "heightmap"
         primitive_fit = False
+    elif choice == "bean_color":
+        volume_mode = "bean_color"
+        volume_method = "heightmap_color"
+        primitive_fit = False
     else:
         volume_mode = "mesh"
         volume_method = "auto"
@@ -583,9 +932,60 @@ def run_volume_module(cfg, parent=None):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     export_stl = os.path.join(volumes_output, f"mesh_escalada_{timestamp}.stl")
 
-    if scale_mode == "aruco" and aruco_result:
+    if volume_method == "heightmap_color":
+        try:
+            color_cfg = cfg.get("parameters", {}).get("bean_color", {})
+            hsv_target = tuple(color_cfg.get("hsv_target", [175, 155, 79]))
+            hsv_tolerance = tuple(color_cfg.get("hsv_tolerance", [12, 80, 80]))
+
+            if scale_mode == "aruco" and aruco_result:
+                scale_value = float(aruco_result["scale"])
+            elif scale_mode == "a4" and a4_result:
+                scale_value = float(a4_result["scale"])
+            else:
+                scale_value = float(
+                    compute_segment_scale(
+                        p1=np.asarray(segment_result["p1"], dtype=float),
+                        p2=np.asarray(segment_result["p2"], dtype=float),
+                        real_distance=float(segment_result["real_distance_m"]),
+                    )
+                )
+
+            recon_dir = os.path.dirname(mesh_path)
+            recon_dir = os.path.dirname(recon_dir)
+            pcd, source = _load_colored_point_cloud_from_recon(recon_dir)
+            volume_m3, meta = compute_bean_volume_from_point_cloud(
+                pcd=pcd,
+                scale=scale_value,
+                hsv_target=hsv_target,
+                hsv_tolerance=hsv_tolerance,
+            )
+            meta["source_path"] = normalize_path(source)
+            meta["color_hsv_target"] = [int(x) for x in hsv_target]
+            meta["color_hsv_tolerance"] = [int(x) for x in hsv_tolerance]
+            result = {
+                "volume": volume_m3,
+                "unit": "m3",
+                "method": "heightmap_color",
+                "scale": scale_value,
+                "heightmap": meta,
+            }
+        except Exception as e:
+            messagebox.showerror(
+                "Erro na segmentacao por cor",
+                f"Nao foi possivel calcular somente o feijao por cor:\n{e}",
+                parent=root_master
+            )
+            if created_root:
+                root_master.destroy()
+            return None
+    elif scale_mode == "aruco" and aruco_result:
+        if not ensure_volume_mesh_path():
+            if created_root:
+                root_master.destroy()
+            return None
         result = compute_volume_from_mesh(
-            mesh_path=mesh_path,
+            mesh_path=volume_mesh_path,
             scale=aruco_result["scale"],
             output_unit="m3",
             volume_method=volume_method,
@@ -615,8 +1015,12 @@ def run_volume_module(cfg, parent=None):
                 result = None
 
         if result is None:
+            if not ensure_volume_mesh_path():
+                if created_root:
+                    root_master.destroy()
+                return None
             result = compute_volume_from_mesh(
-                mesh_path=mesh_path,
+                mesh_path=volume_mesh_path,
                 scale=a4_result["scale"],
                 output_unit="m3",
                 volume_method=volume_method,
@@ -624,8 +1028,12 @@ def run_volume_module(cfg, parent=None):
                 export_stl_path=export_stl
             )
     else:
+        if not ensure_volume_mesh_path():
+            if created_root:
+                root_master.destroy()
+            return None
         result = compute_volume_from_mesh(
-            mesh_path=mesh_path,
+            mesh_path=volume_mesh_path,
             segment_p1=segment_result["p1"],
             segment_p2=segment_result["p2"],
             real_distance=segment_result["real_distance_m"],
@@ -658,10 +1066,10 @@ def run_volume_module(cfg, parent=None):
             messagebox.showinfo(
                 "Seleção de Validação",
                 "Selecione 2 pontos para validação.\n"
-                "Use Shift + Clique e pressione Q para concluir.",
-                parent=root_master
+                "Use C para marcar os dois pontos no centro da tela.\n"
+                "Pressione Q ou feche a janela para concluir.",
             )
-            v1, v2 = _pick_segment_points(mesh_path)
+            v1, v2 = _pick_segment_points(scale_geometry_path)
             if np.allclose(v1, v2):
                 raise ValueError("Pontos iguais na validação.")
 
@@ -697,12 +1105,17 @@ def run_volume_module(cfg, parent=None):
 
     result_payload = {
         "mesh_path": normalize_path(mesh_path),
+        "mesh_volume_path": normalize_path(volume_mesh_path or mesh_path),
         "volume": volume_m3,
         "unit": result["unit"],
         "method": result["method"],
         "scale": float(result["scale"]),
-        "scale_source": "aruco" if scale_mode == "aruco" and aruco_result else (
-            "a4" if scale_mode == "a4" and a4_result else "segment"
+        "scale_source": (
+            "aruco_manual"
+            if scale_mode == "aruco" and aruco_result and aruco_result.get("manual")
+            else ("aruco" if scale_mode == "aruco" and aruco_result else (
+                "a4" if scale_mode == "a4" and a4_result else "segment"
+            ))
         ),
         "volume_method": volume_mode or "auto",
         "export_stl": normalize_path(export_stl),
@@ -720,14 +1133,21 @@ def run_volume_module(cfg, parent=None):
         result_payload["primitive_fit"] = result["primitive_fit"]
     if scale_mode == "aruco" and aruco_result:
         result_payload["aruco"] = {
-            "id": int(aruco_result["aruco_id"]),
-            "dict": aruco_result.get("aruco_dict", ""),
+            "manual": bool(aruco_result.get("manual", False)),
             "marker_size_m": float(aruco_result["marker_size_m"]),
             "marker_size_mesh": float(aruco_result["marker_size_mesh"]),
             "source_path": normalize_path(aruco_result["source_path"]),
-            "corners_3d": aruco_result["corners_3d"],
         }
-        result_payload["summary"]["aruco_id"] = int(aruco_result["aruco_id"])
+        if "aruco_id" in aruco_result:
+            result_payload["aruco"]["id"] = int(aruco_result["aruco_id"])
+            result_payload["summary"]["aruco_id"] = int(aruco_result["aruco_id"])
+        if "aruco_dict" in aruco_result:
+            result_payload["aruco"]["dict"] = aruco_result.get("aruco_dict", "")
+        if "corners_3d" in aruco_result:
+            result_payload["aruco"]["corners_3d"] = aruco_result["corners_3d"]
+        if "segment_p1" in aruco_result and "segment_p2" in aruco_result:
+            result_payload["aruco"]["segment_p1"] = aruco_result["segment_p1"]
+            result_payload["aruco"]["segment_p2"] = aruco_result["segment_p2"]
         result_payload["summary"]["aruco_marker_size_m"] = float(aruco_result["marker_size_m"])
         result_payload["summary"]["aruco_marker_size_mesh"] = float(aruco_result["marker_size_mesh"])
     elif scale_mode == "a4" and a4_result:
@@ -771,20 +1191,27 @@ def run_volume_module(cfg, parent=None):
         "",
         "## Arquivos",
         f"- Malha original: `{result_payload['mesh_path']}`",
+        f"- Malha usada no volume: `{result_payload['mesh_volume_path']}`",
         f"- Malha escalada: `{result_payload['export_stl']}`",
         f"- JSON completo: `{normalize_path(result_file)}`",
     ]
     if "aruco" in result_payload:
         ar = result_payload["aruco"]
+        ar_mode = "manual (Open3D)" if ar.get("manual") else "automatica"
         md_lines += [
             "",
-            "## ArUco (escala automática)",
-            f"- ID: **{ar['id']}**",
-            f"- Dicionário: **{ar.get('dict', '')}**",
+            f"## ArUco (escala {ar_mode})",
             f"- Lado real: **{ar['marker_size_m']:.4f} m**",
             f"- Lado na malha: **{ar['marker_size_mesh']:.6f} unidades**",
             f"- Fonte de cores: `{ar['source_path']}`",
         ]
+        if "id" in ar:
+            md_lines.append(f"- ID: **{ar['id']}**")
+        if "dict" in ar:
+            md_lines.append(f"- Dicionario: **{ar.get('dict', '')}**")
+        if "segment_p1" in ar and "segment_p2" in ar:
+            md_lines.append(f"- Ponto 1 (manual): `{ar['segment_p1']}`")
+            md_lines.append(f"- Ponto 2 (manual): `{ar['segment_p2']}`")
     elif "a4" in result_payload:
         a4 = result_payload["a4"]
         md_lines += [
@@ -864,3 +1291,8 @@ def run_volume_module(cfg, parent=None):
     if created_root:
         root_master.destroy()
     return result_payload
+
+
+
+
+

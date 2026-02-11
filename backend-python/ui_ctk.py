@@ -316,6 +316,7 @@ class HistoryPanel(ctk.CTkFrame):
             )
             return
         try:
+            o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
             geom = o3d.io.read_triangle_mesh(mesh_path)
             if geom.is_empty() or len(geom.triangles) == 0:
                 geom = o3d.io.read_point_cloud(mesh_path)
