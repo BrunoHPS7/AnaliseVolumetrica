@@ -3,9 +3,29 @@ import os
 import platform
 import logging
 import re
+import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, simpledialog
+from collections import deque
 import open3d as o3d  # Certifique-se de ter instalado: pip install open3d
+
+
+def _center_dialog_parent(root, width=420, height=320):
+    root.update_idletasks()
+    sw = root.winfo_screenwidth()
+    sh = root.winfo_screenheight()
+    x = int((sw - width) / 2)
+    y = int((sh - height) / 2)
+    root.geometry(f"{width}x{height}+{x}+{y}")
+    try:
+        root.deiconify()
+        root.attributes("-alpha", 0.0)
+        root.lift()
+    except Exception:
+        pass
+    root.update()
+
+
 
 
 def converter_ply_para_obj(arquivo_ply):
@@ -52,17 +72,56 @@ def normalize_path(path: str) -> str:
     return path.replace("\\", "/")
 
 
+def _colmap_help(tool: str) -> str:
+    try:
+        return subprocess.check_output(
+            ["colmap", tool, "--help"],
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+        )
+    except Exception:
+        return ""
+
+
+def _colmap_has_option(tool: str, option_name: str) -> bool:
+    return option_name in _colmap_help(tool)
+
+
+def _feature_extractor_opts(config) -> str:
+    opts = []
+    if _colmap_has_option("feature_extractor", "--FeatureExtraction.use_gpu"):
+        opts += ["--FeatureExtraction.use_gpu", str(config["use_gpu"])]
+    elif _colmap_has_option("feature_extractor", "--SiftExtraction.use_gpu"):
+        opts += ["--SiftExtraction.use_gpu", str(config["use_gpu"])]
+
+    if _colmap_has_option("feature_extractor", "--FeatureExtraction.num_threads"):
+        opts += ["--FeatureExtraction.num_threads", str(config["threads"])]
+    elif _colmap_has_option("feature_extractor", "--SiftExtraction.num_threads"):
+        opts += ["--SiftExtraction.num_threads", str(config["threads"])]
+    return " ".join(opts)
+
+
+def _exhaustive_matcher_opts(config) -> str:
+    opts = []
+    if _colmap_has_option("exhaustive_matcher", "--FeatureMatching.use_gpu"):
+        opts += ["--FeatureMatching.use_gpu", str(config["use_gpu"])]
+    elif _colmap_has_option("exhaustive_matcher", "--SiftMatching.use_gpu"):
+        opts += ["--SiftMatching.use_gpu", str(config["use_gpu"])]
+    return " ".join(opts)
+
+
 # Janela de Progresso Gráfica
 class ReconstructProgressWindow:
     def __init__(self, total_steps):
         self.root = tk.Tk()
         self.root.title("COLMAP Pipeline")
-        self.root.geometry("500x180")
+        self.root.geometry("560x300")
         self.root.attributes('-topmost', True)
 
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        self.root.geometry(f"500x180+{int(sw / 2 - 250)}+{int(sh / 2 - 90)}")
+        self.root.geometry(f"560x300+{int(sw / 2 - 280)}+{int(sh / 2 - 150)}")
 
         self.label_step = tk.Label(self.root, text="Iniciando...", font=("Arial", 10, "bold"))
         self.label_step.pack(pady=(20, 5))
@@ -73,25 +132,165 @@ class ReconstructProgressWindow:
         self.label_sub = tk.Label(self.root, text="Aguardando comandos...", fg="gray")
         self.label_sub.pack()
 
+        self.label_time = tk.Label(self.root, text="Tempo na etapa: 0s", fg="gray")
+        self.label_time.pack(pady=(2, 2))
+
+        self.label_spinner = tk.Label(self.root, text="Processando...", fg="gray")
+        self.label_spinner.pack(pady=(0, 8))
+
+        self.label_eta = tk.Label(self.root, text="ETA total: --", fg="gray")
+        self.label_eta.pack(pady=(0, 8))
+
+        self.log_box = tk.Text(self.root, height=6, width=70, wrap="word", state="disabled")
+        self.log_box.pack(padx=12, pady=(0, 12), fill="both", expand=True)
+
+        self.total_steps = total_steps
+        self.current_step = 0
+        self.overall_start = time.time()
+        self.step_start = time.time()
+        self.log_lines = deque(maxlen=6)
+        self._spinner_chars = ["|", "/", "-", "\\"]
+        self._spinner_index = 0
+        self._spinner_running = False
+        self._spinner_job = None
+        self._last_progress = None
+        self._eta_step_ema = None
+        self._eta_total_ema = None
+
+    def start_step(self, step_name):
+        self.step_start = time.time()
+        self.label_sub.config(text=step_name)
+        self._spinner_index = 0
+        self._last_progress = None
+        self._eta_step_ema = None
+        self._start_spinner()
+        self._update_time()
+
     def update_step(self, step_name, current_step, total_steps):
         self.label_step.config(text=f"Etapa {current_step} de {total_steps}")
         self.label_sub.config(text=step_name)
         self.progress_bar["value"] = (current_step / total_steps) * 100
+        self.current_step = current_step
+        self.start_step(step_name)
         self.root.update()
 
     def update_sub_progress(self, line):
         match = re.search(r"\[(\d+)/(\d+)\]", line)
+        if not match:
+            match = re.search(r"\b(\d+)\s*/\s*(\d+)\b", line)
         if match:
-            self.label_sub.config(text=f"Processando: {match.group(1)} / {match.group(2)}")
+            current = int(match.group(1))
+            total = int(match.group(2))
+            current = max(current, 0)
+            total = max(total, 1)
+            pct = int((current / total) * 100)
+            self._last_progress = (current, total)
+            self.label_sub.config(text=f"Processando: {current} / {total} ({pct}%)")
+        else:
+            self.label_sub.config(text=line[:140])
+        self._append_log(line)
+        self._update_time()
         self.root.update()
 
+    def _append_log(self, line):
+        if not line:
+            return
+        self.log_lines.append(line)
+        self.log_box.configure(state="normal")
+        self.log_box.delete("1.0", "end")
+        self.log_box.insert("end", "\n".join(self.log_lines))
+        self.log_box.configure(state="disabled")
+        self.log_box.see("end")
+
+    def _update_time(self):
+        elapsed = int(time.time() - self.step_start)
+        eta_step = self._estimate_step_eta(elapsed)
+        if eta_step is None:
+            self.label_time.config(text=f"Tempo na etapa: {elapsed}s")
+        else:
+            self.label_time.config(text=f"Tempo na etapa: {elapsed}s | ETA etapa: {eta_step}s")
+        self._update_overall_eta(elapsed)
+
+    def _update_spinner(self):
+        elapsed = int(time.time() - self.step_start)
+        char = self._spinner_chars[self._spinner_index % len(self._spinner_chars)]
+        self._spinner_index += 1
+        self.label_spinner.config(text=f"Em execucao {char}  ({elapsed}s)")
+
+    def _estimate_step_eta(self, elapsed):
+        if not self._last_progress:
+            return None
+        current, total = self._last_progress
+        if current <= 0:
+            return None
+        remaining = int(elapsed * (total - current) / max(current, 1))
+        raw = max(0, remaining)
+        self._eta_step_ema = self._ema(self._eta_step_ema, raw)
+        return int(self._eta_step_ema)
+
+    def _update_overall_eta(self, elapsed_step):
+        elapsed_total = int(time.time() - self.overall_start)
+        if self.total_steps <= 0:
+            self.label_eta.config(text="ETA total: --")
+            return
+
+        progress_steps = self.current_step - 1
+        if self._last_progress:
+            current, total = self._last_progress
+            frac = (current / max(total, 1))
+        else:
+            frac = 0.0
+
+        completed = progress_steps + frac
+        if completed <= 0:
+            self.label_eta.config(text="ETA total: --")
+            return
+        total_est = int(elapsed_total / completed * self.total_steps)
+        remaining = max(0, total_est - elapsed_total)
+        self._eta_total_ema = self._ema(self._eta_total_ema, remaining)
+        self.label_eta.config(text=f"ETA total: {int(self._eta_total_ema)}s")
+
+    @staticmethod
+    def _ema(prev, value, alpha: float = 0.2):
+        if prev is None:
+            return float(value)
+        return prev + alpha * (value - prev)
+
+    def _start_spinner(self):
+        self._spinner_running = True
+        self._schedule_spinner()
+
+    def _schedule_spinner(self):
+        if not self._spinner_running:
+            return
+        try:
+            self._update_spinner()
+            self._spinner_job = self.root.after(250, self._schedule_spinner)
+        except tk.TclError:
+            self._spinner_running = False
+            self._spinner_job = None
+
+    def stop_spinner(self):
+        self._spinner_running = False
+        if self._spinner_job is not None:
+            try:
+                self.root.after_cancel(self._spinner_job)
+            except Exception:
+                pass
+            self._spinner_job = None
+
     def close(self):
-        self.root.destroy()
+        self.stop_spinner()
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
 
 
 # Executa os comandos da pipeline com log e GUI:
 def run_cmd_gui(cmd, step_name, gui_window):
     print(f"> {step_name}...")
+    gui_window.start_step(step_name)
     process = subprocess.Popen(
         cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding='utf-8', errors='replace'
@@ -104,6 +303,7 @@ def run_cmd_gui(cmd, step_name, gui_window):
             gui_window.update_sub_progress(line_clean)
 
     process.wait()
+    gui_window.stop_spinner()
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, cmd)
 
@@ -137,8 +337,10 @@ def exibir_erro_com_log(mensagem, log_path, sistema):
         try:
             if sistema == "Windows":
                 os.startfile(log_path)
+            elif sistema == "Darwin":
+                subprocess.run(["open", os.path.abspath(log_path)])
             else:
-                subprocess.run(["xdg-open", log_path])
+                subprocess.run(["xdg-open", os.path.abspath(log_path)])
         except Exception as e:
             print(f"Não foi possível abrir o log: {e}")
         root.destroy()
@@ -165,9 +367,10 @@ def selecionar_pasta_frames(caminho_base_cfg):
     root_master = tk.Tk()
     root_master.withdraw()
     root_master.attributes('-topmost', True)
+    _center_dialog_parent(root_master)
 
     titulo_aviso = "Atenção: Seleção de Fotos"
-    instrucao = "Na próxima tela, selecione a PASTA que contém os frames para a reconstrução."
+    instrucao = "Na próxima tela, selecione a PASTA que contém os frames (as imagens podem não aparecer)."
 
     # 2. Seleção da Pasta (Tratamento Multiplataforma)
     pasta_selecionada = None
@@ -199,6 +402,33 @@ def selecionar_pasta_frames(caminho_base_cfg):
         fotos_encontradas = [f for f in arquivos_na_pasta if f.lower().endswith(extensoes_fotos)]
 
         if not fotos_encontradas:
+            subpastas = [
+                os.path.join(pasta_selecionada, d)
+                for d in os.listdir(pasta_selecionada)
+                if os.path.isdir(os.path.join(pasta_selecionada, d))
+            ]
+            subpastas_com_fotos = []
+            for sub in subpastas:
+                try:
+                    itens = os.listdir(sub)
+                    if any(i.lower().endswith(extensoes_fotos) for i in itens):
+                        subpastas_com_fotos.append(sub)
+                except Exception:
+                    continue
+            if len(subpastas_com_fotos) == 1:
+                usar = messagebox.askyesno(
+                    "Subpasta com fotos encontrada",
+                    "Nenhuma foto foi encontrada na pasta selecionada.\n\n"
+                    f"Encontramos fotos em:\n{subpastas_com_fotos[0]}\n\n"
+                    "Deseja usar essa pasta?",
+                    parent=root_master
+                )
+                if usar:
+                    pasta_selecionada = subpastas_com_fotos[0]
+                    arquivos_na_pasta = os.listdir(pasta_selecionada)
+                    fotos_encontradas = [f for f in arquivos_na_pasta if f.lower().endswith(extensoes_fotos)]
+
+        if not fotos_encontradas:
             tipos_str = ", ".join(['.jpg', '.png', '.jpeg'])
             messagebox.showerror("Pasta sem Fotos",
                                  f"A pasta selecionada não contém fotos válidas!\n\n"
@@ -225,6 +455,7 @@ def obter_pasta_reconstrucao(pasta_base_colmap):
     root_master = tk.Tk()
     root_master.withdraw()
     root_master.attributes('-topmost', True)
+    _center_dialog_parent(root_master)
 
     while True:
         # 2. Solicita o nome do projeto
@@ -304,7 +535,7 @@ def obter_pasta_reconstrucao(pasta_base_colmap):
 # Pipeline Principal
 def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
     sistema = platform.system()
-    CONFIG = {"threads": 5, "use_gpu": 0, "gpu_index": "0", "max_img_size": 4000}
+    CONFIG = {"threads": 10, "use_gpu": 1, "gpu_index": "0", "max_img_size": 4000}
 
     pasta_frames = selecionar_pasta_frames(frames_root_dir)
     if not pasta_frames:
@@ -323,10 +554,13 @@ def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
 
     print("\n" + "=" * 50 + "\n      INICIANDO RECONSTRUÇÃO 3D\n" + "=" * 50)
 
+    feature_opts = _feature_extractor_opts(CONFIG)
+    matcher_opts = _exhaustive_matcher_opts(CONFIG)
+
     steps = [
-        (f"colmap feature_extractor --database_path {db} --image_path {img_dir} --SiftExtraction.use_gpu {CONFIG['use_gpu']} --SiftExtraction.num_threads {CONFIG['threads']}",
+        (f"colmap feature_extractor --database_path {db} --image_path {img_dir} {feature_opts}".strip(),
          "1/7: Extração de Features"),
-        (f"colmap exhaustive_matcher --database_path {db} --SiftMatching.use_gpu {CONFIG['use_gpu']}",
+        (f"colmap exhaustive_matcher --database_path {db} {matcher_opts}".strip(),
          "2/7: Matcher Exaustivo"),
         (f"colmap mapper --database_path {db} --image_path {img_dir} --output_path {sparse}",
          "3/7: Reconstrução Esparsa"),

@@ -10,6 +10,7 @@ import subprocess
 import os
 import platform
 from services import *
+from ui_ctk import main as ui_main
 
 def abrir_interface_java():
     jar_path = os.path.abspath(
@@ -66,11 +67,5 @@ if __name__ == "__main__":
 
     else:
         print("🖥️ Modo usuário — iniciando interface gráfica")
-        abrir_interface_java()
-
-        # backend fica disponível para a UI
-        from app import app
-
-        app.run(port=5000)
-
+        ui_main()
 
