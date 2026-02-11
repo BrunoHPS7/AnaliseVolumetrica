@@ -353,6 +353,166 @@ def compute_heightmap_volume(
     }
 
 
+def _hsv_mask(hsv: np.ndarray, h: int, s: int, v: int, tol_h: int, tol_s: int, tol_v: int) -> np.ndarray:
+    h = int(h) % 180
+    tol_h = max(0, int(tol_h))
+    s_min = max(0, int(s - tol_s))
+    s_max = min(255, int(s + tol_s))
+    v_min = max(0, int(v - tol_v))
+    v_max = min(255, int(v + tol_v))
+
+    if tol_h >= 90:
+        h_mask = np.ones(len(hsv), dtype=bool)
+    else:
+        h_min = (h - tol_h) % 180
+        h_max = (h + tol_h) % 180
+        if h_min <= h_max:
+            h_mask = (hsv[:, 0] >= h_min) & (hsv[:, 0] <= h_max)
+        else:
+            h_mask = (hsv[:, 0] >= h_min) | (hsv[:, 0] <= h_max)
+    s_mask = (hsv[:, 1] >= s_min) & (hsv[:, 1] <= s_max)
+    v_mask = (hsv[:, 2] >= v_min) & (hsv[:, 2] <= v_max)
+    return h_mask & s_mask & v_mask
+
+
+def filter_point_cloud_by_hsv(
+    pcd: o3d.geometry.PointCloud,
+    hsv_target: Tuple[int, int, int] = (175, 155, 79),
+    hsv_tolerance: Tuple[int, int, int] = (12, 80, 80),
+    min_points: int = 500,
+) -> Optional[o3d.geometry.PointCloud]:
+    if pcd.is_empty() or not pcd.has_colors():
+        return None
+    colors = np.asarray(pcd.colors)
+    if colors.size == 0:
+        return None
+    rgb = (np.clip(colors, 0.0, 1.0) * 255.0).astype(np.uint8)
+    hsv = cv2.cvtColor(rgb.reshape(-1, 1, 3), cv2.COLOR_RGB2HSV).reshape(-1, 3)
+    mask = _hsv_mask(hsv, *hsv_target, *hsv_tolerance)
+    if int(mask.sum()) < min_points:
+        return None
+    return pcd.select_by_index(np.where(mask)[0].tolist())
+
+
+def compute_heightmap_volume_from_point_cloud(
+    pcd: o3d.geometry.PointCloud,
+    grid_size: Optional[float] = None,
+) -> Tuple[float, Dict[str, Union[float, int, List[float]]]]:
+    if pcd.is_empty():
+        raise ValueError("Nuvem de pontos vazia.")
+
+    points = np.asarray(pcd.points)
+    if points.size == 0:
+        raise ValueError("Sem pontos para cálculo de altura.")
+
+    bbox = pcd.get_axis_aligned_bounding_box()
+    diag = float(np.linalg.norm(bbox.get_extent()))
+    distance_threshold = max(diag * 0.002, 1e-6)
+    plane_model, inliers = pcd.segment_plane(
+        distance_threshold=distance_threshold,
+        ransac_n=3,
+        num_iterations=1000,
+    )
+    min_inliers = max(500, int(len(points) * 0.05))
+    if len(inliers) < min_inliers:
+        raise ValueError("Plano da mesa não detectado com confiança.")
+
+    normal = np.array(plane_model[:3], dtype=float)
+    norm = float(np.linalg.norm(normal))
+    if norm == 0:
+        raise ValueError("Plano inválido para altura.")
+    n = normal / norm
+    d = float(plane_model[3]) / norm
+    p0 = -d * n
+
+    heights = (points - p0) @ n
+    if np.median(heights) < 0:
+        n = -n
+        heights = -heights
+
+    mask = heights > 0
+    if not np.any(mask):
+        raise ValueError("Nenhum ponto acima do plano.")
+    points_above = points[mask]
+    heights = heights[mask]
+
+    helper = np.array([1.0, 0.0, 0.0], dtype=float)
+    if abs(np.dot(helper, n)) > 0.9:
+        helper = np.array([0.0, 1.0, 0.0], dtype=float)
+    u = np.cross(n, helper)
+    u_norm = float(np.linalg.norm(u))
+    if u_norm == 0:
+        raise ValueError("Plano inválido para altura.")
+    u /= u_norm
+    v = np.cross(n, u)
+
+    coords = np.column_stack(((points_above - p0) @ u, (points_above - p0) @ v))
+    min_xy = coords.min(axis=0)
+    max_xy = coords.max(axis=0)
+    extent = max_xy - min_xy
+    if extent[0] <= 0 or extent[1] <= 0:
+        raise ValueError("Extensão inválida para altura.")
+
+    if grid_size is None:
+        area = float(extent[0] * extent[1])
+        spacing = np.sqrt(area / max(len(coords), 1))
+        cell = max(spacing, 1e-6)
+        width = int(extent[0] / cell) + 1
+        height = int(extent[1] / cell) + 1
+        max_dim = max(width, height)
+        if max_dim > 1200:
+            cell *= max_dim / 1200
+        elif max_dim < 200:
+            cell *= max_dim / 200
+        grid_size = max(cell, 1e-6)
+
+    width = int(extent[0] / grid_size) + 1
+    height = int(extent[1] / grid_size) + 1
+
+    xi = ((coords[:, 0] - min_xy[0]) / grid_size).astype(int)
+    yi = ((coords[:, 1] - min_xy[1]) / grid_size).astype(int)
+    xi = np.clip(xi, 0, width - 1)
+    yi = np.clip(yi, 0, height - 1)
+
+    height_grid = np.zeros((height, width), dtype=np.float32)
+    np.maximum.at(height_grid, (yi, xi), heights.astype(np.float32))
+
+    volume = float(height_grid.sum() * (grid_size ** 2))
+    return volume, {
+        "grid_size": float(grid_size),
+        "plane_model": [float(x) for x in plane_model],
+        "points_used": int(len(points_above)),
+    }
+
+
+def compute_bean_volume_from_point_cloud(
+    pcd: o3d.geometry.PointCloud,
+    scale: float,
+    hsv_target: Tuple[int, int, int] = (175, 155, 79),
+    hsv_tolerance: Tuple[int, int, int] = (12, 80, 80),
+    grid_size: Optional[float] = None,
+) -> Tuple[float, Dict[str, Union[float, int, List[float]]]]:
+    if scale <= 0:
+        raise ValueError("scale deve ser > 0.")
+    beans_pcd = filter_point_cloud_by_hsv(
+        pcd,
+        hsv_target=hsv_target,
+        hsv_tolerance=hsv_tolerance,
+    )
+    if beans_pcd is None:
+        raise ValueError("Segmentação por cor não encontrou pontos suficientes.")
+
+    beans_pcd = beans_pcd.scale(scale, center=(0.0, 0.0, 0.0))
+    volume_m3, meta = compute_heightmap_volume_from_point_cloud(
+        beans_pcd,
+        grid_size=grid_size,
+    )
+    meta["color_hsv_target"] = [int(x) for x in hsv_target]
+    meta["color_hsv_tolerance"] = [int(x) for x in hsv_tolerance]
+    meta["method"] = "heightmap_color"
+    return volume_m3, meta
+
+
 def _pca_basis(points: np.ndarray):
     center = points.mean(axis=0)
     centered = points - center
@@ -619,6 +779,26 @@ def _load_colored_point_cloud(mesh_path: str) -> Tuple[o3d.geometry.PointCloud, 
         "Não foi possível obter cores para detectar o ArUco. "
         "Use uma malha .ply com cores ou garanta que exista fused.ply na pasta."
     )
+
+
+def _load_colored_point_cloud_from_recon(
+    recon_dir: str,
+) -> Tuple[o3d.geometry.PointCloud, str]:
+    candidates = [
+        os.path.join(recon_dir, "dense", "fused.ply"),
+        os.path.join(recon_dir, "dense", "meshed.ply"),
+        os.path.join(recon_dir, "dense", "mesh_poisson.ply"),
+    ]
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+        try:
+            pcd = o3d.io.read_point_cloud(path)
+            if not pcd.is_empty() and pcd.has_colors():
+                return pcd, path
+        except Exception:
+            continue
+    raise ValueError("Não foi possível obter uma nuvem colorida da reconstrução.")
 
 
 def _plane_basis(plane_model: List[float]):

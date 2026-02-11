@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import yaml
+import shutil
 from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
@@ -14,6 +15,8 @@ from src.processing import (
     generate_mesh_from_dense_point_cloud,
     compute_aruco_scale_from_mesh,
     compute_a4_scale_from_mesh,
+    compute_bean_volume_from_point_cloud,
+    _load_colored_point_cloud_from_recon,
 )
 from ui_local import *
 
@@ -266,14 +269,22 @@ def run_reconstruction_module(cfg, parent=None):
     dense_dir = os.path.join(proj_dir, "dense")
     fused_ply = os.path.join(dense_dir, "fused.ply")
     if os.path.exists(fused_ply):
-        output_ply = os.path.join(dense_dir, "mesh_poisson.ply")
-        output_stl = os.path.join(dense_dir, "mesh_poisson.stl")
+        output_ply = os.path.join(dense_dir, "meshed.ply")
+        output_stl = os.path.join(dense_dir, "meshed.stl")
         try:
-            generate_mesh_from_dense_point_cloud(
-                dense_ply_path=fused_ply,
-                output_ply_path=output_ply,
-                output_stl_path=output_stl,
-            )
+            if not os.path.exists(output_ply):
+                generate_mesh_from_dense_point_cloud(
+                    dense_ply_path=fused_ply,
+                    output_ply_path=output_ply,
+                    output_stl_path=output_stl,
+                )
+            # Compatibilidade com versões antigas
+            compat_ply = os.path.join(dense_dir, "mesh_poisson.ply")
+            compat_stl = os.path.join(dense_dir, "mesh_poisson.stl")
+            if os.path.exists(output_ply) and not os.path.exists(compat_ply):
+                shutil.copyfile(output_ply, compat_ply)
+            if os.path.exists(output_stl) and not os.path.exists(compat_stl):
+                shutil.copyfile(output_stl, compat_stl)
         except Exception as e:
             root, created_root = _get_parent_root(parent)
             messagebox.showwarning(
@@ -287,8 +298,12 @@ def run_reconstruction_module(cfg, parent=None):
 
 
 def run_full_module(cfg):
-    run_opencv_module(cfg)
-    run_reconstruction_module(cfg)
+    if not run_opencv_module(cfg):
+        return False
+    if not run_reconstruction_module(cfg):
+        return False
+    run_volume_module(cfg)
+    return True
 
 
 def _pick_segment_points(mesh_path):
@@ -484,6 +499,12 @@ def run_volume_module(cfg, parent=None):
                 return None
             scale_mode = "segment"
 
+    # Se a escala for A4, força o método "altura" (monte granular)
+    if scale_mode == "a4" and a4_result:
+        volume_mode = "heightmap"
+        volume_method = "heightmap"
+        primitive_fit = False
+
     if scale_mode == "segment":
         messagebox.showinfo(
             "Seleção de Segmento",
@@ -572,14 +593,36 @@ def run_volume_module(cfg, parent=None):
             export_stl_path=export_stl
         )
     elif scale_mode == "a4" and a4_result:
-        result = compute_volume_from_mesh(
-            mesh_path=mesh_path,
-            scale=a4_result["scale"],
-            output_unit="m3",
-            volume_method=volume_method,
-            primitive_fit=primitive_fit,
-            export_stl_path=export_stl
-        )
+        result = None
+        if volume_method == "heightmap":
+            try:
+                recon_dir = os.path.dirname(mesh_path)
+                recon_dir = os.path.dirname(recon_dir)
+                pcd, source = _load_colored_point_cloud_from_recon(recon_dir)
+                volume_m3, meta = compute_bean_volume_from_point_cloud(
+                    pcd=pcd,
+                    scale=a4_result["scale"],
+                )
+                meta["source_path"] = normalize_path(source)
+                result = {
+                    "volume": volume_m3,
+                    "unit": "m3",
+                    "method": "heightmap_color",
+                    "scale": float(a4_result["scale"]),
+                    "heightmap": meta,
+                }
+            except Exception:
+                result = None
+
+        if result is None:
+            result = compute_volume_from_mesh(
+                mesh_path=mesh_path,
+                scale=a4_result["scale"],
+                output_unit="m3",
+                volume_method=volume_method,
+                primitive_fit=primitive_fit,
+                export_stl_path=export_stl
+            )
     else:
         result = compute_volume_from_mesh(
             mesh_path=mesh_path,
