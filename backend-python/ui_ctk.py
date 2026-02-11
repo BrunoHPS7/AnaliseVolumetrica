@@ -7,6 +7,7 @@ import tkinter.font as tkfont
 from tkinter import messagebox
 
 import customtkinter as ctk
+import open3d as o3d
 
 from services import (
     load_config,
@@ -205,6 +206,8 @@ class HistoryPanel(ctk.CTkFrame):
         ctk.CTkButton(actions, text="Atualizar", width=90, command=self.refresh).pack(side="left", padx=4)
         ctk.CTkButton(actions, text="Abrir", width=90, command=self.open_selected).pack(side="left", padx=4)
         ctk.CTkButton(actions, text="Abrir pasta", width=110, command=self.open_folder).pack(side="left", padx=4)
+        if self.mode == "reconstructions":
+            ctk.CTkButton(actions, text="Ver 3D", width=90, command=self.open_mesh_view).pack(side="left", padx=4)
         ctk.CTkButton(actions, text="Excluir", width=90, command=self.delete_selected).pack(side="left", padx=4)
 
         self.listbox.bind("<<ListboxSelect>>", self.update_detail)
@@ -281,6 +284,39 @@ class HistoryPanel(ctk.CTkFrame):
 
     def open_folder(self):
         _open_path(self.path)
+
+    def open_mesh_view(self):
+        if self.mode != "reconstructions":
+            return
+        path = self._selected_path()
+        if not path:
+            messagebox.showerror("Seleção inválida", "Selecione uma reconstrução.", parent=self)
+            return
+        dense_dir = os.path.join(path, "dense")
+        candidates = [
+            os.path.join(dense_dir, "meshed.ply"),
+            os.path.join(dense_dir, "mesh_poisson.ply"),
+            os.path.join(dense_dir, "fused.ply"),
+        ]
+        mesh_path = next((p for p in candidates if os.path.exists(p)), None)
+        if not mesh_path:
+            messagebox.showerror(
+                "Malha não encontrada",
+                "Não foi possível localizar meshed.ply, mesh_poisson.ply ou fused.ply.",
+                parent=self,
+            )
+            return
+        try:
+            geom = o3d.io.read_triangle_mesh(mesh_path)
+            if geom.is_empty() or len(geom.triangles) == 0:
+                geom = o3d.io.read_point_cloud(mesh_path)
+            if geom.is_empty():
+                raise ValueError("Arquivo vazio.")
+            if isinstance(geom, o3d.geometry.TriangleMesh):
+                geom.compute_vertex_normals()
+            o3d.visualization.draw_geometries([geom], window_name=os.path.basename(path))
+        except Exception as exc:
+            messagebox.showerror("Erro ao abrir 3D", str(exc), parent=self)
 
     def delete_selected(self):
         path = self._selected_path()
@@ -374,7 +410,7 @@ def build_ui():
     history_wrap.grid_columnconfigure((0, 1), weight=1)
 
     history_items = [
-        ("Reconstruções", "Projetos gerados pelo COLMAP", _resolve_path(cfg["paths"]["colmap_output"]), "dir"),
+        ("Reconstruções", "Projetos gerados pelo COLMAP", _resolve_path(cfg["paths"]["colmap_output"]), "reconstructions"),
         ("Frames", "Pastas de frames extraídos", _resolve_path(cfg["paths"]["frames_output"]), "dir"),
         ("Volumes", "Relatórios e resultados de volume", _resolve_path(cfg["paths"]["volumes_output"]), "volumes"),
     ]

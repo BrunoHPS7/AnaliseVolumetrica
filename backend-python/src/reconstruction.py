@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 import os
 import platform
 import logging
@@ -86,6 +86,65 @@ def _colmap_help(tool: str) -> str:
 
 def _colmap_has_option(tool: str, option_name: str) -> bool:
     return option_name in _colmap_help(tool)
+
+
+_COLMAP_COMMANDS_CACHE = None
+
+
+def _colmap_has_command(command_name: str) -> bool:
+    global _COLMAP_COMMANDS_CACHE
+    if _COLMAP_COMMANDS_CACHE is None:
+        try:
+            _COLMAP_COMMANDS_CACHE = subprocess.check_output(
+                ["colmap", "help"],
+                text=True,
+                encoding="utf-8",
+                errors="ignore",
+            )
+        except Exception:
+            _COLMAP_COMMANDS_CACHE = ""
+    return re.search(rf"\b{re.escape(command_name)}\b", _COLMAP_COMMANDS_CACHE) is not None
+
+
+def _load_colmap_ini(path: str) -> dict:
+    if not path or not os.path.exists(path):
+        return {}
+    entries = {}
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#") or line.startswith(";"):
+                    continue
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip()
+                if not key:
+                    continue
+                entries[key] = value
+    except Exception:
+        return {}
+    return entries
+
+
+def _ini_to_args(entries: dict, exclude: set, tool: str) -> str:
+    if not entries:
+        return ""
+    parts = []
+    for key, value in entries.items():
+        if key in exclude:
+            continue
+        if value is None:
+            continue
+        if isinstance(value, str) and value.strip() == "":
+            continue
+        opt_name = f"--{key}"
+        if not _colmap_has_option(tool, opt_name):
+            continue
+        parts.append(f"--{key} {value}")
+    return " ".join(parts)
 
 
 def _feature_extractor_opts(config) -> str:
@@ -263,6 +322,8 @@ class ReconstructProgressWindow:
     def _schedule_spinner(self):
         if not self._spinner_running:
             return
+        if not self.root.winfo_exists():
+            return
         try:
             self._update_spinner()
             self._spinner_job = self.root.after(250, self._schedule_spinner)
@@ -281,6 +342,10 @@ class ReconstructProgressWindow:
 
     def close(self):
         self.stop_spinner()
+        try:
+            self.root.update_idletasks()
+        except tk.TclError:
+            pass
         try:
             self.root.destroy()
         except tk.TclError:
@@ -536,6 +601,7 @@ def obter_pasta_reconstrucao(pasta_base_colmap):
 def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
     sistema = platform.system()
     CONFIG = {"threads": 10, "use_gpu": 1, "gpu_index": "0", "max_img_size": 4000}
+    overall_start = time.time()
 
     pasta_frames = selecionar_pasta_frames(frames_root_dir)
     if not pasta_frames:
@@ -557,21 +623,74 @@ def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
     feature_opts = _feature_extractor_opts(CONFIG)
     matcher_opts = _exhaustive_matcher_opts(CONFIG)
 
+    ini_dir = resources_dir or ""
+    ini_feature = _load_colmap_ini(os.path.join(ini_dir, "feature_extractor.ini"))
+    ini_matcher = _load_colmap_ini(os.path.join(ini_dir, "exhaustive_matcher.ini"))
+    ini_mapper = _load_colmap_ini(os.path.join(ini_dir, "mapper.ini"))
+    ini_undistorter = _load_colmap_ini(os.path.join(ini_dir, "image_undistorter.ini"))
+    ini_patch_match = _load_colmap_ini(os.path.join(ini_dir, "patch_match_stereo.ini"))
+    ini_fusion = _load_colmap_ini(os.path.join(ini_dir, "stereo_fusion.ini"))
+
+    exclude_common = {
+        "project_path",
+        "database_path",
+        "image_path",
+        "input_path",
+        "output_path",
+        "workspace_path",
+    }
+    ini_feature_args = _ini_to_args(ini_feature, exclude_common, "feature_extractor")
+    ini_matcher_args = _ini_to_args(ini_matcher, exclude_common, "exhaustive_matcher")
+    ini_mapper_args = _ini_to_args(ini_mapper, exclude_common, "mapper")
+    ini_undistorter_args = _ini_to_args(ini_undistorter, exclude_common, "image_undistorter")
+    ini_patch_match_args = _ini_to_args(ini_patch_match, exclude_common, "patch_match_stereo")
+    ini_fusion_args = _ini_to_args(ini_fusion, exclude_common, "stereo_fusion")
+    logging.info("Config .ini carregadas do diretório: %s", normalize_path(ini_dir))
+    logging.info("feature_extractor.ini: %s", "OK" if ini_feature else "vazio/ausente")
+    logging.info("exhaustive_matcher.ini: %s", "OK" if ini_matcher else "vazio/ausente")
+    logging.info("mapper.ini: %s", "OK" if ini_mapper else "vazio/ausente")
+    logging.info("image_undistorter.ini: %s", "OK" if ini_undistorter else "vazio/ausente")
+    logging.info("patch_match_stereo.ini: %s", "OK" if ini_patch_match else "vazio/ausente")
+    logging.info("stereo_fusion.ini: %s", "OK" if ini_fusion else "vazio/ausente")
+    logging.info("Args feature_extractor: %s", ini_feature_args or "(nenhum)")
+    logging.info("Args exhaustive_matcher: %s", ini_matcher_args or "(nenhum)")
+    logging.info("Args mapper: %s", ini_mapper_args or "(nenhum)")
+    logging.info("Args image_undistorter: %s", ini_undistorter_args or "(nenhum)")
+    logging.info("Args patch_match_stereo: %s", ini_patch_match_args or "(nenhum)")
+    logging.info("Args stereo_fusion: %s", ini_fusion_args or "(nenhum)")
+
+    base_steps = [
+        (f"colmap feature_extractor --database_path {db} --image_path {img_dir} {feature_opts} {ini_feature_args}".strip(),
+         "Extração de Features"),
+        (f"colmap exhaustive_matcher --database_path {db} {matcher_opts} {ini_matcher_args}".strip(),
+         "Matcher Exaustivo"),
+        (f"colmap mapper --database_path {db} --image_path {img_dir} --output_path {sparse} {ini_mapper_args}".strip(),
+         "Reconstrução Esparsa"),
+        (f"colmap image_undistorter --image_path {img_dir} --input_path {sparse}/0 --output_path {dense} --output_type COLMAP --max_image_size {CONFIG['max_img_size']} {ini_undistorter_args}".strip(),
+         "Removendo Distorção"),
+        (f"colmap patch_match_stereo --workspace_path {dense} --PatchMatchStereo.gpu_index {CONFIG['gpu_index']} {ini_patch_match_args}".strip(),
+         "Patch Match Stereo"),
+        (f"colmap stereo_fusion --workspace_path {dense} --output_path {dense}/fused.ply {ini_fusion_args}".strip(),
+         "Fusão de Nuvem de Pontos"),
+    ]
+
+    if _colmap_has_command("stereo_mesher"):
+        mesher_cmd = f"colmap stereo_mesher --input_path {dense}/fused.ply --output_path {dense}/meshed.ply"
+        mesher_title = "Geração de Malha Final"
+        base_steps.append((mesher_cmd, mesher_title))
+    elif _colmap_has_command("poisson_mesher"):
+        mesher_cmd = f"colmap poisson_mesher --input_path {dense}/fused.ply --output_path {dense}/meshed.ply"
+        mesher_title = "Geração de Malha Final (Poisson)"
+        base_steps.append((mesher_cmd, mesher_title))
+    else:
+        logging.warning(
+            "Nenhum mesher disponível no COLMAP (stereo_mesher/poisson_mesher). "
+            "Etapa de malha será ignorada; use a malha Poisson do Open3D."
+        )
+
     steps = [
-        (f"colmap feature_extractor --database_path {db} --image_path {img_dir} {feature_opts}".strip(),
-         "1/7: Extração de Features"),
-        (f"colmap exhaustive_matcher --database_path {db} {matcher_opts}".strip(),
-         "2/7: Matcher Exaustivo"),
-        (f"colmap mapper --database_path {db} --image_path {img_dir} --output_path {sparse}",
-         "3/7: Reconstrução Esparsa"),
-        (f"colmap image_undistorter --image_path {img_dir} --input_path {sparse}/0 --output_path {dense} --output_type COLMAP --max_image_size {CONFIG['max_img_size']}",
-         "4/7: Removendo Distorção"),
-        (f"colmap patch_match_stereo --workspace_path {dense} --PatchMatchStereo.gpu_index {CONFIG['gpu_index']}",
-         "5/7: Patch Match Stereo"),
-        (f"colmap stereo_fusion --workspace_path {dense} --output_path {dense}/fused.ply",
-         "6/7: Fusão de Nuvem de Pontos"),
-        (f"colmap stereo_mesher --input_path {dense}/fused.ply --output_path {dense}/meshed.ply",
-         "7/7: Geração de Malha Final")
+        (cmd, f"{i}/{len(base_steps)}: {title}")
+        for i, (cmd, title) in enumerate(base_steps, 1)
     ]
 
     gui = ReconstructProgressWindow(len(steps))
@@ -598,7 +717,9 @@ def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
             logging.warning("O arquivo meshed.ply não foi encontrado. Pulando conversão para OBJ.")
 
         gui.close()
-        print("\n" + "=" * 50 + f"\nSUCESSO! Projeto: {os.path.basename(proj_dir)}\n" + "=" * 50)
+        total_seconds = int(time.time() - overall_start)
+        logging.info("Reconstrução finalizada em %ss", total_seconds)
+        print("\n" + "=" * 50 + f"\nSUCESSO! Projeto: {os.path.basename(proj_dir)}\nTempo total: {total_seconds}s\n" + "=" * 50)
 
         root = tk.Tk()
         root.withdraw()
@@ -611,3 +732,4 @@ def run_colmap_reconstruction(frames_root_dir, colmap_root_dir, resources_dir):
         if 'gui' in locals(): gui.close()
         exibir_erro_com_log(f"Falha na etapa: {name}\n{str(e)}", log_path, sistema)
         return None
+

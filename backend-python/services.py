@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import yaml
+import shutil
 from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
@@ -266,14 +267,22 @@ def run_reconstruction_module(cfg, parent=None):
     dense_dir = os.path.join(proj_dir, "dense")
     fused_ply = os.path.join(dense_dir, "fused.ply")
     if os.path.exists(fused_ply):
-        output_ply = os.path.join(dense_dir, "mesh_poisson.ply")
-        output_stl = os.path.join(dense_dir, "mesh_poisson.stl")
+        output_ply = os.path.join(dense_dir, "meshed.ply")
+        output_stl = os.path.join(dense_dir, "meshed.stl")
         try:
-            generate_mesh_from_dense_point_cloud(
-                dense_ply_path=fused_ply,
-                output_ply_path=output_ply,
-                output_stl_path=output_stl,
-            )
+            if not os.path.exists(output_ply):
+                generate_mesh_from_dense_point_cloud(
+                    dense_ply_path=fused_ply,
+                    output_ply_path=output_ply,
+                    output_stl_path=output_stl,
+                )
+            # Compatibilidade com versões antigas
+            compat_ply = os.path.join(dense_dir, "mesh_poisson.ply")
+            compat_stl = os.path.join(dense_dir, "mesh_poisson.stl")
+            if os.path.exists(output_ply) and not os.path.exists(compat_ply):
+                shutil.copyfile(output_ply, compat_ply)
+            if os.path.exists(output_stl) and not os.path.exists(compat_stl):
+                shutil.copyfile(output_stl, compat_stl)
         except Exception as e:
             root, created_root = _get_parent_root(parent)
             messagebox.showwarning(
@@ -287,8 +296,12 @@ def run_reconstruction_module(cfg, parent=None):
 
 
 def run_full_module(cfg):
-    run_opencv_module(cfg)
-    run_reconstruction_module(cfg)
+    if not run_opencv_module(cfg):
+        return False
+    if not run_reconstruction_module(cfg):
+        return False
+    run_volume_module(cfg)
+    return True
 
 
 def _pick_segment_points(mesh_path):
