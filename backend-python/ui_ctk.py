@@ -201,14 +201,23 @@ class HistoryPanel(ctk.CTkFrame):
         self.detail.pack(anchor="w", padx=14, pady=(0, 8))
 
         actions = ctk.CTkFrame(self, fg_color="transparent")
-        actions.pack(pady=(0, 12))
+        actions.pack(pady=(0, 12), fill="x")
+        actions.grid_columnconfigure((0, 1, 2), weight=1)
 
-        ctk.CTkButton(actions, text="Atualizar", width=90, command=self.refresh).pack(side="left", padx=4)
-        ctk.CTkButton(actions, text="Abrir", width=90, command=self.open_selected).pack(side="left", padx=4)
-        ctk.CTkButton(actions, text="Abrir pasta", width=110, command=self.open_folder).pack(side="left", padx=4)
+        buttons = [
+            ("Atualizar", self.refresh),
+            ("Abrir", self.open_selected),
+            ("Abrir pasta", self.open_folder),
+        ]
         if self.mode == "reconstructions":
-            ctk.CTkButton(actions, text="Ver 3D", width=90, command=self.open_mesh_view).pack(side="left", padx=4)
-        ctk.CTkButton(actions, text="Excluir", width=90, command=self.delete_selected).pack(side="left", padx=4)
+            buttons.append(("Ver 3D", self.open_mesh_view))
+        buttons.append(("Excluir", self.delete_selected))
+
+        for idx, (label, cmd) in enumerate(buttons):
+            row = idx // 3
+            col = idx % 3
+            btn = ctk.CTkButton(actions, text=label, width=100, command=cmd)
+            btn.grid(row=row, column=col, padx=4, pady=4, sticky="ew")
 
         self.listbox.bind("<<ListboxSelect>>", self.update_detail)
         self.refresh()

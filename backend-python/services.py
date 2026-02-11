@@ -15,6 +15,8 @@ from src.processing import (
     generate_mesh_from_dense_point_cloud,
     compute_aruco_scale_from_mesh,
     compute_a4_scale_from_mesh,
+    compute_bean_volume_from_point_cloud,
+    _load_colored_point_cloud_from_recon,
 )
 from ui_local import *
 
@@ -497,6 +499,12 @@ def run_volume_module(cfg, parent=None):
                 return None
             scale_mode = "segment"
 
+    # Se a escala for A4, força o método "altura" (monte granular)
+    if scale_mode == "a4" and a4_result:
+        volume_mode = "heightmap"
+        volume_method = "heightmap"
+        primitive_fit = False
+
     if scale_mode == "segment":
         messagebox.showinfo(
             "Seleção de Segmento",
@@ -585,14 +593,36 @@ def run_volume_module(cfg, parent=None):
             export_stl_path=export_stl
         )
     elif scale_mode == "a4" and a4_result:
-        result = compute_volume_from_mesh(
-            mesh_path=mesh_path,
-            scale=a4_result["scale"],
-            output_unit="m3",
-            volume_method=volume_method,
-            primitive_fit=primitive_fit,
-            export_stl_path=export_stl
-        )
+        result = None
+        if volume_method == "heightmap":
+            try:
+                recon_dir = os.path.dirname(mesh_path)
+                recon_dir = os.path.dirname(recon_dir)
+                pcd, source = _load_colored_point_cloud_from_recon(recon_dir)
+                volume_m3, meta = compute_bean_volume_from_point_cloud(
+                    pcd=pcd,
+                    scale=a4_result["scale"],
+                )
+                meta["source_path"] = normalize_path(source)
+                result = {
+                    "volume": volume_m3,
+                    "unit": "m3",
+                    "method": "heightmap_color",
+                    "scale": float(a4_result["scale"]),
+                    "heightmap": meta,
+                }
+            except Exception:
+                result = None
+
+        if result is None:
+            result = compute_volume_from_mesh(
+                mesh_path=mesh_path,
+                scale=a4_result["scale"],
+                output_unit="m3",
+                volume_method=volume_method,
+                primitive_fit=primitive_fit,
+                export_stl_path=export_stl
+            )
     else:
         result = compute_volume_from_mesh(
             mesh_path=mesh_path,
