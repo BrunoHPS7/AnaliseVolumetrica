@@ -251,8 +251,12 @@ class ReconstructProgressWindow:
     def _schedule_spinner(self):
         if not self._spinner_running:
             return
-        self._update_spinner()
-        self._spinner_job = self.root.after(250, self._schedule_spinner)
+        try:
+            self._update_spinner()
+            self._spinner_job = self.root.after(250, self._schedule_spinner)
+        except tk.TclError:
+            self._spinner_running = False
+            self._spinner_job = None
 
     def stop_spinner(self):
         self._spinner_running = False
@@ -265,7 +269,10 @@ class ReconstructProgressWindow:
 
     def close(self):
         self.stop_spinner()
-        self.root.destroy()
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
 
 
 # Executa os comandos da pipeline com log e GUI:
