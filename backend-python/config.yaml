@@ -34,21 +34,19 @@ parameters:
     hsv_tolerance: [12, 80, 80]
 
     # Perfis de cor para diferentes tipos de feijão (união de todas as faixas)
-    # Ative apenas os perfis do tipo de feijão sendo medido.
+    # Ajuste active_profiles conforme o tipo de feijão sendo medido.
     profiles:
+      # Feijao vermelho/vinho na reconstrucao 3D (H~5-25, S alto, V baixo)
+      vermelho_escuro:
+        hsv_target: [15, 140, 70]
+        hsv_tolerance: [12, 50, 48]
       carioca:
         hsv_target: [12, 140, 100]
         hsv_tolerance: [15, 50, 50]
       preto:
         hsv_target: [0, 20, 35]
         hsv_tolerance: [15, 30, 30]
-      vermelho:
-        hsv_target: [175, 155, 79]
-        hsv_tolerance: [12, 50, 50]
-      vinho:
-        hsv_target: [3, 130, 60]
-        hsv_tolerance: [10, 60, 40]
-    active_profiles: ["vermelho", "vinho"]
+    active_profiles: ["vermelho_escuro"]
 
     # Parâmetros de detecção espacial
     detection:
