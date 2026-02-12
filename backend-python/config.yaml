@@ -32,3 +32,39 @@ parameters:
     # OpenCV HSV (H: 0-179, S: 0-255, V: 0-255)
     hsv_target: [175, 155, 79]
     hsv_tolerance: [12, 80, 80]
+
+    # Perfis de cor para diferentes tipos de feijão (união de todas as faixas)
+    # Ative apenas os perfis do tipo de feijão sendo medido.
+    profiles:
+      carioca:
+        hsv_target: [12, 140, 100]
+        hsv_tolerance: [15, 50, 50]
+      preto:
+        hsv_target: [0, 20, 35]
+        hsv_tolerance: [15, 30, 30]
+      vermelho:
+        hsv_target: [175, 155, 79]
+        hsv_tolerance: [12, 50, 50]
+      vinho:
+        hsv_target: [3, 130, 60]
+        hsv_tolerance: [10, 60, 40]
+    active_profiles: ["vermelho", "vinho"]
+
+    # Parâmetros de detecção espacial
+    detection:
+      voxel_downsample_fraction: 0.002
+      stat_outlier_nb_neighbors: 20
+      stat_outlier_std_ratio: 2.0
+      dbscan_eps_fraction: 0.01
+      dbscan_min_points: 20
+      min_cluster_fraction: 0.10
+      ground_plane_distance_fraction: 0.002
+      ground_plane_ransac_n: 3
+      ground_plane_iterations: 1500
+      min_height_above_ground: 0.0
+
+    # Melhorias no heightmap
+    heightmap:
+      gaussian_sigma: 1.0
+      fill_holes: true
+      fill_max_radius: 3

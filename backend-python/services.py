@@ -18,6 +18,7 @@ from src.processing import (
     compute_a4_scale_from_mesh,
     compute_bean_volume_from_point_cloud,
     _load_colored_point_cloud_from_recon,
+    _extract_hsv_profiles_from_config,
 )
 from ui_local import *
 
@@ -380,12 +381,16 @@ def _pick_segment_points(mesh_path):
     pick_max_dist = max(diag_disp * 0.03, 1e-6)
 
     width, height = 1280, 720
+    # Passo do offset por tecla em pixels (~3% da janela por toque).
+    arrow_step = max(width * 0.03, 10.0)
     state = {
         "picked": [],
         "markers": [],
         "center_marker": None,
         "center_point": None,
         "frame_count": 0,
+        "offset_u": 0.0,  # Offset horizontal em pixels (setas esq/dir)
+        "offset_v": 0.0,  # Offset vertical em pixels (setas cima/baixo)
     }
 
     def _compute_pick_from_screen(vis, u, v):
@@ -455,7 +460,9 @@ def _pick_segment_points(mesh_path):
         if state["frame_count"] % 3 != 0:
             return False
 
-        picked = _compute_pick_from_screen(vis, width * 0.5, height * 0.5)
+        u = width * 0.5 + state["offset_u"]
+        v = height * 0.5 + state["offset_v"]
+        picked = _compute_pick_from_screen(vis, u, v)
         if picked is None:
             return False
 
@@ -483,7 +490,35 @@ def _pick_segment_points(mesh_path):
         return False
 
     def _mark_center(vis):
-        return _mark_point(vis, width * 0.5, height * 0.5)
+        u = width * 0.5 + state["offset_u"]
+        v = height * 0.5 + state["offset_v"]
+        return _mark_point(vis, u, v)
+
+    def _arrow_up(vis):
+        state["offset_v"] -= arrow_step
+        print(f"[PICK] W: offset=({state['offset_u']:.0f}, {state['offset_v']:.0f})")
+        return False
+
+    def _arrow_down(vis):
+        state["offset_v"] += arrow_step
+        print(f"[PICK] S: offset=({state['offset_u']:.0f}, {state['offset_v']:.0f})")
+        return False
+
+    def _arrow_left(vis):
+        state["offset_u"] -= arrow_step
+        print(f"[PICK] A: offset=({state['offset_u']:.0f}, {state['offset_v']:.0f})")
+        return False
+
+    def _arrow_right(vis):
+        state["offset_u"] += arrow_step
+        print(f"[PICK] D: offset=({state['offset_u']:.0f}, {state['offset_v']:.0f})")
+        return False
+
+    def _reset_offset(vis):
+        state["offset_u"] = 0.0
+        state["offset_v"] = 0.0
+        print("[PICK] R: offset resetado ao centro.")
+        return False
 
     def _undo(vis):
         if not state["picked"]:
@@ -500,7 +535,7 @@ def _pick_segment_points(mesh_path):
         return False
 
     vis = o3d.visualization.VisualizerWithKeyCallback()
-    vis.create_window(window_name="Picker: C marca centro | Q conclui", width=width, height=height)
+    vis.create_window(window_name="Picker: WASD move | C marca | R reseta | Q conclui", width=width, height=height)
     vis.add_geometry(display_pcd)
     try:
         render = vis.get_render_option()
@@ -510,13 +545,19 @@ def _pick_segment_points(mesh_path):
 
     vis.register_key_callback(ord("C"), _mark_center)
     vis.register_key_callback(ord("Q"), _finish)
-    vis.register_key_callback(8, _undo)  # Backspace
+    vis.register_key_callback(ord("R"), _reset_offset)
+    vis.register_key_callback(8, _undo)    # Backspace
     vis.register_key_callback(259, _undo)  # Backspace em alguns backends
+    # WASD para mover o guia (setas são capturadas pelo Open3D para câmera)
+    vis.register_key_callback(ord("W"), _arrow_up)
+    vis.register_key_callback(ord("S"), _arrow_down)
+    vis.register_key_callback(ord("A"), _arrow_left)
+    vis.register_key_callback(ord("D"), _arrow_right)
     vis.register_animation_callback(_update_center_guide)
 
     print("[PICK] Controles de camera nativos ativos (rotacao/pan/zoom).")
-    print("[PICK] Ponto guia ciano mostra o centro na superficie.")
-    print("[PICK] C marca no centro. Backspace desfaz. Q conclui.")
+    print("[PICK] W/A/S/D movem o guia ciano na superficie.")
+    print("[PICK] C marca no centro. R reseta posicao. Backspace desfaz. Q conclui.")
     vis.run()
     vis.destroy_window()
 
@@ -731,8 +772,8 @@ def run_volume_module(cfg, parent=None):
     if scale_mode == "aruco":
         aruco_size = simpledialog.askfloat(
             "Tamanho do ArUco",
-            "Digite o tamanho real do lado do ArUco (em mm):",
-            initialvalue=100.0,
+            "Digite o tamanho real do lado do ArUco (em cm):",
+            initialvalue=14.0,
             parent=root_master
         )
         if aruco_size is None or aruco_size <= 0:
@@ -784,7 +825,7 @@ def run_volume_module(cfg, parent=None):
                                 root_master.destroy()
                             return None
 
-                real_marker_size_m = float(aruco_size) * 0.001
+                real_marker_size_m = float(aruco_size) * 0.01
                 manual_scale = compute_segment_scale(
                     p1=np.asarray(p1, dtype=float),
                     p2=np.asarray(p2, dtype=float),
@@ -803,7 +844,7 @@ def run_volume_module(cfg, parent=None):
                 try:
                     aruco_result = compute_aruco_scale_from_mesh(
                         mesh_path=scale_geometry_path,
-                        real_marker_size=aruco_size,
+                        real_marker_size=aruco_size * 10.0,
                         input_unit="mm",
                         aruco_dict=[
                             "DICT_4X4_50",
@@ -937,6 +978,9 @@ def run_volume_module(cfg, parent=None):
             color_cfg = cfg.get("parameters", {}).get("bean_color", {})
             hsv_target = tuple(color_cfg.get("hsv_target", [175, 155, 79]))
             hsv_tolerance = tuple(color_cfg.get("hsv_tolerance", [12, 80, 80]))
+            hsv_profiles = _extract_hsv_profiles_from_config(color_cfg)
+            detection_cfg = color_cfg.get("detection", {})
+            heightmap_cfg = color_cfg.get("heightmap", {})
 
             if scale_mode == "aruco" and aruco_result:
                 scale_value = float(aruco_result["scale"])
@@ -959,10 +1003,11 @@ def run_volume_module(cfg, parent=None):
                 scale=scale_value,
                 hsv_target=hsv_target,
                 hsv_tolerance=hsv_tolerance,
+                hsv_profiles=hsv_profiles,
+                detection_cfg=detection_cfg,
+                heightmap_cfg=heightmap_cfg,
             )
             meta["source_path"] = normalize_path(source)
-            meta["color_hsv_target"] = [int(x) for x in hsv_target]
-            meta["color_hsv_tolerance"] = [int(x) for x in hsv_tolerance]
             result = {
                 "volume": volume_m3,
                 "unit": "m3",
@@ -996,12 +1041,19 @@ def run_volume_module(cfg, parent=None):
         result = None
         if volume_method == "heightmap":
             try:
+                color_cfg_a4 = cfg.get("parameters", {}).get("bean_color", {})
+                hsv_profiles_a4 = _extract_hsv_profiles_from_config(color_cfg_a4)
+                detection_cfg_a4 = color_cfg_a4.get("detection", {})
+                heightmap_cfg_a4 = color_cfg_a4.get("heightmap", {})
                 recon_dir = os.path.dirname(mesh_path)
                 recon_dir = os.path.dirname(recon_dir)
                 pcd, source = _load_colored_point_cloud_from_recon(recon_dir)
                 volume_m3, meta = compute_bean_volume_from_point_cloud(
                     pcd=pcd,
                     scale=a4_result["scale"],
+                    hsv_profiles=hsv_profiles_a4,
+                    detection_cfg=detection_cfg_a4,
+                    heightmap_cfg=heightmap_cfg_a4,
                 )
                 meta["source_path"] = normalize_path(source)
                 result = {

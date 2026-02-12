@@ -4,6 +4,7 @@ import numpy as np
 import trimesh
 import open3d as o3d
 import cv2
+from scipy.ndimage import gaussian_filter
 
 """
 Módulo: processing
@@ -394,6 +395,254 @@ def filter_point_cloud_by_hsv(
     return pcd.select_by_index(np.where(mask)[0].tolist())
 
 
+# ---------------------------------------------------------------------------
+# Improved bean pile detection helpers
+# ---------------------------------------------------------------------------
+
+def _multi_hsv_mask(
+    hsv: np.ndarray,
+    profiles: List[Dict[str, Tuple[int, int, int]]],
+) -> np.ndarray:
+    mask = np.zeros(len(hsv), dtype=bool)
+    for prof in profiles:
+        t = prof["hsv_target"]
+        tol = prof["hsv_tolerance"]
+        mask |= _hsv_mask(hsv, t[0], t[1], t[2], tol[0], tol[1], tol[2])
+    return mask
+
+
+def _extract_hsv_profiles_from_config(
+    bean_color_cfg: Dict,
+) -> List[Dict[str, Tuple[int, int, int]]]:
+    profiles_section = bean_color_cfg.get("profiles")
+    active = bean_color_cfg.get("active_profiles", None)
+    if profiles_section and active is not None:
+        if active == "all":
+            names = list(profiles_section.keys())
+        else:
+            names = list(active) if isinstance(active, (list, tuple)) else [active]
+        result = []
+        for name in names:
+            p = profiles_section.get(name)
+            if p is None:
+                continue
+            result.append({
+                "hsv_target": tuple(p.get("hsv_target", [175, 155, 79])),
+                "hsv_tolerance": tuple(p.get("hsv_tolerance", [12, 80, 80])),
+            })
+        if result:
+            return result
+    # Fallback: legacy single target/tolerance
+    return [{
+        "hsv_target": tuple(bean_color_cfg.get("hsv_target", [175, 155, 79])),
+        "hsv_tolerance": tuple(bean_color_cfg.get("hsv_tolerance", [12, 80, 80])),
+    }]
+
+
+def _detect_ground_plane(
+    pcd: o3d.geometry.PointCloud,
+    distance_fraction: float = 0.002,
+    ransac_n: int = 3,
+    num_iterations: int = 1500,
+    min_inlier_fraction: float = 0.05,
+) -> Tuple[np.ndarray, np.ndarray, List[float], List[int]]:
+    points = np.asarray(pcd.points)
+    if len(points) < 100:
+        raise ValueError("Poucos pontos para detecção de plano.")
+    bbox = pcd.get_axis_aligned_bounding_box()
+    diag = float(np.linalg.norm(bbox.get_extent()))
+    distance_threshold = max(diag * distance_fraction, 1e-6)
+    plane_model, inliers = pcd.segment_plane(
+        distance_threshold=distance_threshold,
+        ransac_n=ransac_n,
+        num_iterations=num_iterations,
+    )
+    min_inliers = max(500, int(len(points) * min_inlier_fraction))
+    if len(inliers) < min_inliers:
+        raise ValueError("Plano da mesa não detectado com confiança.")
+    normal = np.array(plane_model[:3], dtype=float)
+    norm = float(np.linalg.norm(normal))
+    if norm == 0:
+        raise ValueError("Plano inválido.")
+    n = normal / norm
+    d = float(plane_model[3]) / norm
+    p0 = -d * n
+    # Orient so that median height is positive (above ground)
+    heights = (points - p0) @ n
+    if np.median(heights) < 0:
+        n = -n
+    return n, p0, [float(x) for x in plane_model], list(inliers)
+
+
+def _segment_above_ground(
+    pcd: o3d.geometry.PointCloud,
+    normal: np.ndarray,
+    p0: np.ndarray,
+    min_height: float = 0.0,
+    ground_inliers: Optional[List[int]] = None,
+) -> Tuple[o3d.geometry.PointCloud, np.ndarray]:
+    points = np.asarray(pcd.points)
+    heights = (points - p0) @ normal
+    above = heights > min_height
+    if ground_inliers is not None:
+        ground_set = set(ground_inliers)
+        for idx in ground_set:
+            if 0 <= idx < len(above):
+                above[idx] = False
+    indices = np.where(above)[0].tolist()
+    if not indices:
+        raise ValueError("Nenhum ponto acima do plano.")
+    return pcd.select_by_index(indices), heights[above]
+
+
+def _cluster_and_select_pile(
+    pcd: o3d.geometry.PointCloud,
+    eps_fraction: float = 0.01,
+    min_points: int = 20,
+    min_cluster_fraction: float = 0.10,
+) -> Tuple[o3d.geometry.PointCloud, Dict[str, Union[int, float, List[int]]]]:
+    if pcd.is_empty():
+        raise ValueError("Nuvem vazia para clustering.")
+    # Adaptive eps: use k-nearest-neighbor average distance for robust clustering.
+    # This adapts to the actual point density instead of the bounding box extent,
+    # preventing overly large eps when scattered points inflate the bbox.
+    points = np.asarray(pcd.points)
+    kd = o3d.geometry.KDTreeFlann(pcd)
+    k = min(10, len(points) - 1)
+    if k >= 1:
+        dists = []
+        # Sample up to 500 points for speed
+        sample_idx = np.random.choice(len(points), min(500, len(points)), replace=False)
+        for idx in sample_idx:
+            _, nn_idx, nn_dist = kd.search_knn_vector_3d(points[idx], k + 1)
+            if len(nn_dist) > 1:
+                dists.append(np.sqrt(nn_dist[1]))  # nearest neighbor (skip self)
+        mean_nn_dist = float(np.mean(dists)) if dists else 1e-6
+        # eps = 3x mean nearest neighbor distance — connects local neighbors
+        # while keeping separate clusters apart
+        eps = max(mean_nn_dist * 3.0, 1e-6)
+    else:
+        bbox = pcd.get_axis_aligned_bounding_box()
+        diag = float(np.linalg.norm(bbox.get_extent()))
+        eps = max(diag * eps_fraction, 1e-6)
+    labels = np.asarray(
+        pcd.cluster_dbscan(eps=eps, min_points=min_points, print_progress=False)
+    )
+    unique_labels = set(labels.tolist())
+    unique_labels.discard(-1)
+    if not unique_labels:
+        raise ValueError("Nenhum cluster encontrado (todos os pontos são ruído).")
+    cluster_sizes = {}
+    for lbl in unique_labels:
+        cluster_sizes[lbl] = int((labels == lbl).sum())
+    sorted_clusters = sorted(cluster_sizes.items(), key=lambda x: x[1], reverse=True)
+    largest_label, largest_count = sorted_clusters[0]
+    total = len(labels)
+    noise_count = int((labels == -1).sum())
+    filtered_total = total - noise_count
+    if filtered_total > 0 and largest_count / filtered_total < min_cluster_fraction:
+        raise ValueError(
+            f"Maior cluster tem apenas {largest_count}/{filtered_total} pontos "
+            f"({largest_count/filtered_total:.1%}), abaixo do mínimo {min_cluster_fraction:.0%}."
+        )
+    indices = np.where(labels == largest_label)[0].tolist()
+    diagnostics = {
+        "num_clusters_found": len(unique_labels),
+        "largest_cluster_points": largest_count,
+        "noise_points": noise_count,
+        "cluster_sizes": [s for _, s in sorted_clusters],
+        "eps_used": float(eps),
+    }
+    return pcd.select_by_index(indices), diagnostics
+
+
+def _improved_heightmap_volume(
+    points_above: np.ndarray,
+    heights: np.ndarray,
+    normal: np.ndarray,
+    p0: np.ndarray,
+    grid_size: Optional[float] = None,
+    gaussian_sigma: float = 1.0,
+    fill_holes: bool = True,
+    fill_max_radius: int = 3,
+) -> Tuple[float, Dict[str, Union[float, int, List[float]]]]:
+    # Build 2D coordinate system on the plane
+    helper = np.array([1.0, 0.0, 0.0], dtype=float)
+    if abs(np.dot(helper, normal)) > 0.9:
+        helper = np.array([0.0, 1.0, 0.0], dtype=float)
+    u = np.cross(normal, helper)
+    u /= float(np.linalg.norm(u))
+    v = np.cross(normal, u)
+
+    coords = np.column_stack(((points_above - p0) @ u, (points_above - p0) @ v))
+    min_xy = coords.min(axis=0)
+    max_xy = coords.max(axis=0)
+    extent = max_xy - min_xy
+    if extent[0] <= 0 or extent[1] <= 0:
+        raise ValueError("Extensão inválida para heightmap.")
+
+    if grid_size is None:
+        area = float(extent[0] * extent[1])
+        spacing = np.sqrt(area / max(len(coords), 1))
+        cell = max(spacing, 1e-6)
+        w = int(extent[0] / cell) + 1
+        h = int(extent[1] / cell) + 1
+        max_dim = max(w, h)
+        if max_dim > 1200:
+            cell *= max_dim / 1200
+        elif max_dim < 200:
+            cell *= max_dim / 200
+        grid_size = max(cell, 1e-6)
+
+    w = int(extent[0] / grid_size) + 1
+    h = int(extent[1] / grid_size) + 1
+
+    xi = np.clip(((coords[:, 0] - min_xy[0]) / grid_size).astype(int), 0, w - 1)
+    yi = np.clip(((coords[:, 1] - min_xy[1]) / grid_size).astype(int), 0, h - 1)
+
+    height_grid = np.zeros((h, w), dtype=np.float32)
+    np.maximum.at(height_grid, (yi, xi), heights.astype(np.float32))
+
+    data_mask = height_grid > 0
+
+    # Hole filling: only fill empty cells that are truly surrounded by data
+    # (majority of 3x3 neighbours must be filled — threshold > 0.5)
+    if fill_holes and fill_max_radius > 0:
+        from scipy.ndimage import uniform_filter
+        empty = ~data_mask
+        for _ in range(fill_max_radius):
+            if not np.any(empty):
+                break
+            count = uniform_filter(data_mask.astype(np.float32), size=3, mode="constant")
+            h_sum = uniform_filter(height_grid, size=3, mode="constant")
+            # Only fill cells where >50% of 3x3 neighbourhood has data
+            fillable = empty & (count > 0.5)
+            if not np.any(fillable):
+                break
+            height_grid[fillable] = h_sum[fillable] / np.clip(count[fillable], 1e-9, None)
+            data_mask = height_grid > 0
+            empty = ~data_mask
+
+    # Normalized Gaussian smoothing: avoids zero-bleeding from empty cells
+    if gaussian_sigma > 0 and np.any(data_mask):
+        weight = data_mask.astype(np.float32)
+        smoothed_h = gaussian_filter(height_grid * weight, sigma=gaussian_sigma)
+        smoothed_w = gaussian_filter(weight, sigma=gaussian_sigma)
+        valid = smoothed_w > 1e-9
+        height_grid[valid & data_mask] = smoothed_h[valid & data_mask] / smoothed_w[valid & data_mask]
+        height_grid[~data_mask] = 0.0
+
+    volume = float(height_grid.sum() * (grid_size ** 2))
+    return volume, {
+        "grid_size": float(grid_size),
+        "grid_width": w,
+        "grid_height": h,
+        "points_used": int(len(points_above)),
+        "gaussian_sigma": float(gaussian_sigma),
+        "fill_holes": fill_holes,
+    }
+
+
 def compute_heightmap_volume_from_point_cloud(
     pcd: o3d.geometry.PointCloud,
     grid_size: Optional[float] = None,
@@ -491,25 +740,111 @@ def compute_bean_volume_from_point_cloud(
     hsv_target: Tuple[int, int, int] = (175, 155, 79),
     hsv_tolerance: Tuple[int, int, int] = (12, 80, 80),
     grid_size: Optional[float] = None,
+    hsv_profiles: Optional[List[Dict[str, Tuple[int, int, int]]]] = None,
+    detection_cfg: Optional[Dict] = None,
+    heightmap_cfg: Optional[Dict] = None,
 ) -> Tuple[float, Dict[str, Union[float, int, List[float]]]]:
     if scale <= 0:
         raise ValueError("scale deve ser > 0.")
-    beans_pcd = filter_point_cloud_by_hsv(
-        pcd,
-        hsv_target=hsv_target,
-        hsv_tolerance=hsv_tolerance,
-    )
-    if beans_pcd is None:
-        raise ValueError("Segmentação por cor não encontrou pontos suficientes.")
+    if pcd.is_empty() or not pcd.has_colors():
+        raise ValueError("Nuvem de pontos vazia ou sem cores.")
 
-    beans_pcd = beans_pcd.scale(scale, center=(0.0, 0.0, 0.0))
-    volume_m3, meta = compute_heightmap_volume_from_point_cloud(
-        beans_pcd,
-        grid_size=grid_size,
+    det = detection_cfg or {}
+    hm_cfg = heightmap_cfg or {}
+    total_points = len(np.asarray(pcd.points))
+
+    # Step 1: Optional voxel downsampling
+    voxel_frac = det.get("voxel_downsample_fraction", 0.002)
+    if voxel_frac and voxel_frac > 0:
+        bbox = pcd.get_axis_aligned_bounding_box()
+        diag = float(np.linalg.norm(bbox.get_extent()))
+        voxel_size = max(diag * voxel_frac, 1e-6)
+        pcd = pcd.voxel_down_sample(voxel_size)
+
+    # Step 2: Ground plane detection on FULL point cloud
+    n, p0, plane_model, ground_inliers = _detect_ground_plane(
+        pcd,
+        distance_fraction=det.get("ground_plane_distance_fraction", 0.002),
+        ransac_n=det.get("ground_plane_ransac_n", 3),
+        num_iterations=det.get("ground_plane_iterations", 1500),
     )
+
+    # Step 3: Segment above ground
+    min_h = det.get("min_height_above_ground", 0.0)
+    above_pcd, _ = _segment_above_ground(pcd, n, p0, min_height=min_h, ground_inliers=ground_inliers)
+    points_above_ground = len(np.asarray(above_pcd.points))
+
+    # Step 4: Multi-profile HSV color filtering on above-ground points
+    if not above_pcd.has_colors():
+        raise ValueError("Pontos acima do plano não possuem cores.")
+    colors = np.asarray(above_pcd.colors)
+    rgb = (np.clip(colors, 0.0, 1.0) * 255.0).astype(np.uint8)
+    hsv_arr = cv2.cvtColor(rgb.reshape(-1, 1, 3), cv2.COLOR_RGB2HSV).reshape(-1, 3)
+
+    if hsv_profiles and len(hsv_profiles) > 0:
+        color_mask = _multi_hsv_mask(hsv_arr, hsv_profiles)
+    else:
+        color_mask = _hsv_mask(hsv_arr, *hsv_target, *hsv_tolerance)
+
+    min_points = 500
+    if int(color_mask.sum()) < min_points:
+        raise ValueError("Segmentação por cor não encontrou pontos suficientes.")
+    beans_pcd = above_pcd.select_by_index(np.where(color_mask)[0].tolist())
+    points_after_hsv = len(np.asarray(beans_pcd.points))
+
+    # Step 5: Statistical outlier removal
+    nb = det.get("stat_outlier_nb_neighbors", 20)
+    std_r = det.get("stat_outlier_std_ratio", 2.0)
+    beans_pcd, _ = beans_pcd.remove_statistical_outlier(
+        nb_neighbors=nb, std_ratio=std_r
+    )
+    if beans_pcd.is_empty():
+        raise ValueError("Todos os pontos removidos pela remoção de outliers.")
+    points_after_outlier = len(np.asarray(beans_pcd.points))
+
+    # Step 6: DBSCAN clustering to isolate the pile
+    pile_pcd, cluster_diag = _cluster_and_select_pile(
+        beans_pcd,
+        eps_fraction=det.get("dbscan_eps_fraction", 0.01),
+        min_points=det.get("dbscan_min_points", 20),
+        min_cluster_fraction=det.get("min_cluster_fraction", 0.10),
+    )
+
+    # Step 7: Apply scale
+    pile_pcd = pile_pcd.scale(scale, center=(0.0, 0.0, 0.0))
+    scaled_p0 = p0 * scale
+    scaled_n = n  # normal direction unchanged by uniform scale
+
+    # Step 8: Compute heights relative to scaled ground plane
+    pile_pts = np.asarray(pile_pcd.points)
+    heights = (pile_pts - scaled_p0) @ scaled_n
+    heights = np.clip(heights, 0.0, None)
+
+    # Step 9: Improved heightmap volume
+    volume_m3, hm_meta = _improved_heightmap_volume(
+        pile_pts,
+        heights,
+        scaled_n,
+        scaled_p0,
+        grid_size=grid_size,
+        gaussian_sigma=hm_cfg.get("gaussian_sigma", 1.0),
+        fill_holes=hm_cfg.get("fill_holes", True),
+        fill_max_radius=hm_cfg.get("fill_max_radius", 3),
+    )
+
+    # Step 10: Assemble metadata
+    meta = {**hm_meta}
+    meta["method"] = "heightmap_color"
+    meta["plane_model"] = plane_model
     meta["color_hsv_target"] = [int(x) for x in hsv_target]
     meta["color_hsv_tolerance"] = [int(x) for x in hsv_tolerance]
-    meta["method"] = "heightmap_color"
+    if hsv_profiles:
+        meta["profiles_used"] = len(hsv_profiles)
+    meta["total_points_in_cloud"] = total_points
+    meta["points_above_ground"] = points_above_ground
+    meta["points_after_hsv_filter"] = points_after_hsv
+    meta["points_after_outlier_removal"] = points_after_outlier
+    meta["cluster_diagnostics"] = cluster_diag
     return volume_m3, meta
 
 
