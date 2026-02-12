@@ -33,13 +33,12 @@ A aplicação possui uma **interface Java moderna e intuitiva** com melhorias si
 ### ✨ Novidades v1.3.0 (Janeiro 2026) - MAIS RECENTE!
 
 **Interface de Fluxo Passo a Passo:**
-- 🔢 **4 passos claramente numerados** (1 → 2 → 3 → 4)
+- 🔢 **3 passos claramente numerados** (1 → 2 → 3)
 - 📋 Cada etapa do processo explicada visualmente
 - 🎯 Fluxo vertical intuitivo e fácil de seguir
 - ✅ Passo 1: Extrair Frames do vídeo
-- ✅ Passo 2: Calibrar Câmera para precisão
-- ✅ Passo 3: Reconstruir 3D com COLMAP
-- ✅ Passo 4: Calcular Volume final
+- ✅ Passo 2: Reconstruir 3D com COLMAP
+- ✅ Passo 3: Calcular Volume final
 
 **Melhorias de Design:**
 - 🎨 Cards horizontais com número em círculo colorido
@@ -70,7 +69,7 @@ A aplicação possui uma **interface Java moderna e intuitiva** com melhorias si
 ### ✨ Novidades v1.1.0 (Janeiro 2026)
 
 **Redesign da Tela Inicial:**
-- 🎯 4 cards modernos com ações principais
+- 🎯 3 cards modernos com ações principais
 - 🎨 Paleta de cores profissional (Indigo, Verde, Laranja, Roxo)
 - 📊 Indicador de status da conexão com backend
 - 🧭 Menu simplificado (3 itens ao invés de 5)
