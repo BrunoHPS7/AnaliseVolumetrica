@@ -545,13 +545,33 @@ def _cluster_and_select_pile(
             f"Maior cluster tem apenas {largest_count}/{filtered_total} pontos "
             f"({largest_count/filtered_total:.1%}), abaixo do mínimo {min_cluster_fraction:.0%}."
         )
-    indices = np.where(labels == largest_label)[0].tolist()
+    # Merge nearby clusters: clusters whose centroid is within merge_dist
+    # of the largest cluster's centroid are absorbed (they are likely
+    # fragments of the same pile).
+    largest_mask = labels == largest_label
+    largest_centroid = points[largest_mask].mean(axis=0)
+    largest_extent = float(np.linalg.norm(
+        points[largest_mask].max(axis=0) - points[largest_mask].min(axis=0)
+    ))
+    merge_dist = max(largest_extent * 0.8, eps * 5.0)
+    merged_labels = {largest_label}
+    for lbl, cnt in sorted_clusters[1:]:
+        centroid = points[labels == lbl].mean(axis=0)
+        if float(np.linalg.norm(centroid - largest_centroid)) < merge_dist:
+            merged_labels.add(lbl)
+
+    merged_mask = np.isin(labels, list(merged_labels))
+    merged_count = int(merged_mask.sum())
+    indices = np.where(merged_mask)[0].tolist()
     diagnostics = {
         "num_clusters_found": len(unique_labels),
+        "clusters_merged": len(merged_labels),
         "largest_cluster_points": largest_count,
+        "merged_cluster_points": merged_count,
         "noise_points": noise_count,
         "cluster_sizes": [s for _, s in sorted_clusters],
         "eps_used": float(eps),
+        "merge_dist": float(merge_dist),
     }
     return pcd.select_by_index(indices), diagnostics
 

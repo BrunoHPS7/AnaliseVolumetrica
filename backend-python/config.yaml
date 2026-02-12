@@ -50,7 +50,7 @@ parameters:
 
     # Parâmetros de detecção espacial
     detection:
-      voxel_downsample_fraction: 0.002
+      voxel_downsample_fraction: 0.001
       stat_outlier_nb_neighbors: 20
       stat_outlier_std_ratio: 2.0
       dbscan_eps_fraction: 0.01
